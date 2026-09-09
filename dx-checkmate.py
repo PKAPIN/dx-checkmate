@@ -3,8 +3,12 @@ import pandas as pd
 import requests
 import random
 import time
+import json
+import os
 
 st.set_page_config(page_title="DX-CheckMate", page_icon=":material/fact_check:", layout="wide")
+
+CHECKPOINT_FILE = ".checkpoint.json"
 
 col_title, col_guide = st.columns([1.5, 1])
 
@@ -33,7 +37,7 @@ with col_guide:
     2. **[출석체크 구글 시트]** 버튼을 눌러, 대상자 데이터를 붙여넣기(입력) 합니다.
     3. 이번에 출석을 진행할 인원들의 **'출석하기'** 열 체크박스를 선택합니다.
     4. 아래에서 실행 모드 선택 후 **[자동 출석체크 시작하기]** 버튼을 클릭합니다.
-    5. 중간에 끊어지더라도 **[이어하기]** 버튼으로 안전하게 마저 전송할 수 있습니다.
+    5. 브라우저를 새로고침하거나 닫아도 **[중단된 작업 이어서 시작하기]**로 복구할 수 있습니다.
     """)
 
 st.divider()
@@ -83,19 +87,31 @@ def generate_decay_delays(num_people, mode):
 
     return delays
 
-# --- 세션 상태(이어하기) 초기화 ---
-if 'job_status' not in st.session_state:
-    st.session_state.job_status = "idle"  # idle, running, interrupted, completed
-if 'shuffled_df' not in st.session_state:
-    st.session_state.shuffled_df = None
-if 'delays' not in st.session_state:
-    st.session_state.delays = None
-if 'current_index' not in st.session_state:
-    st.session_state.current_index = 0
-if 'result_logs' not in st.session_state:
-    st.session_state.result_logs = []
-if 'success_count' not in st.session_state:
-    st.session_state.success_count = 0
+# --- 파일 기반 체크포인트 제어 함수 ---
+def save_checkpoint(current_index, shuffled_data, delays, result_logs, success_count, event_code):
+    checkpoint_data = {
+        "current_index": current_index,
+        "shuffled_data": shuffled_data,
+        "delays": delays,
+        "result_logs": result_logs,
+        "success_count": success_count,
+        "event_code": event_code
+    }
+    with open(CHECKPOINT_FILE, "w", encoding="utf-8") as f:
+        json.dump(checkpoint_data, f, ensure_ascii=False, indent=2)
+
+def load_checkpoint():
+    if os.path.exists(CHECKPOINT_FILE):
+        try:
+            with open(CHECKPOINT_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
+    return None
+
+def clear_checkpoint():
+    if os.path.exists(CHECKPOINT_FILE):
+        os.remove(CHECKPOINT_FILE)
 
 try:
     df_raw = pd.read_csv(CSV_URL, header=None)
@@ -145,44 +161,49 @@ try:
         * **후반부 (잔여 마무리 10%)**: 마감 직전 마지막 남은 인원이 제출하는 현상 재현
         """)
 
-    # 작업 제어 영역
-    control_col1, control_col2 = st.columns([1, 3])
+    # 저장된 중단 기록 확인
+    saved_cp = load_checkpoint()
     
-    start_btn = False
-    resume_btn = False
-
-    with control_col1:
-        if st.session_state.job_status == "interrupted":
+    if saved_cp and saved_cp.get("event_code") == event_code:
+        processed_num = saved_cp.get("current_index", 0)
+        total_num = len(saved_cp.get("shuffled_data", []))
+        st.warning(f"⚠️ 이전 작업이 중단된 기록이 있습니다. ({processed_num}/{total_num}명 진행 완료)", icon=":material/warning:")
+        
+        btn_col1, btn_col2 = st.columns([1, 1])
+        with btn_col1:
             resume_btn = st.button("🚀 중단된 작업 이어서 시작하기", type="primary")
-            if st.button("🔄 기록 지우고 처음부터 새로 시작", type="secondary"):
-                st.session_state.job_status = "idle"
-                st.rerun()
-        else:
-            start_btn = st.button("자동 출석체크 시작하기", type="primary")
+        with btn_col2:
+            reset_btn = st.button("🔄 기록 지우고 처음부터 새로 시작", type="secondary")
+            
+        if reset_btn:
+            clear_checkpoint()
+            st.rerun()
+    else:
+        resume_btn = False
+        start_btn = st.button("자동 출석체크 시작하기", type="primary")
 
-    if start_btn or resume_btn:
-        total_count = len(target_df)
+    if (not saved_cp and start_btn) or (saved_cp and resume_btn):
         progress_bar = st.progress(0)
         log_area = st.empty()
 
-        # 새로 시작하는 경우 세션 초기화 및 명단 셔플
-        if start_btn:
-            st.session_state.job_status = "running"
-            st.session_state.shuffled_df = target_df.sample(frac=1).reset_index(drop=True)
-            st.session_state.delays = generate_decay_delays(total_count, exec_mode)
-            st.session_state.current_index = 0
-            st.session_state.result_logs = []
-            st.session_state.success_count = 0
-        
-        # 이어하기 버튼을 누른 경우 상태 플래그만 running으로 변경
-        if resume_btn:
-            st.session_state.job_status = "running"
+        if resume_btn and saved_cp:
+            current_index = saved_cp["current_index"]
+            shuffled_data = saved_cp["shuffled_data"]
+            delays = saved_cp["delays"]
+            result_logs = saved_cp["result_logs"]
+            success_count = saved_cp["success_count"]
+            shuffled_df = pd.DataFrame(shuffled_data)
+        else:
+            clear_checkpoint()
+            current_index = 0
+            shuffled_df = target_df.sample(frac=1).reset_index(drop=True)
+            shuffled_data = shuffled_df.to_dict(orient="records")
+            delays = generate_decay_delays(len(target_df), exec_mode)
+            result_logs = []
+            success_count = 0
 
-        shuffled_df = st.session_state.shuffled_df
-        delays = st.session_state.delays
-        
-        # 전체 딜레이 중 남은 사람들의 딜레이 합산 계산
-        remaining_delays = delays[st.session_state.current_index:]
+        total_count = len(shuffled_df)
+        remaining_delays = delays[current_index:]
         total_delay_sum = sum(remaining_delays)
 
         session = requests.Session()
@@ -193,109 +214,100 @@ try:
         })
 
         start_time = time.time()
-        
-        # 만약 이 과정에서 끊기면, except KeyboardInterrupt 등 외부 요인에 의해 끊어지더라도
-        # session_state에 current_index가 저장되어 있어 다음에 "interrupted" 상태로 복구 가능하도록 설계
-        try:
-            for idx in range(st.session_state.current_index, total_count):
-                st.session_state.current_index = idx  # 현재 처리할 사람 인덱스 기록 (중단 시점 대비)
-                
-                row = shuffled_df.iloc[idx]
-                wait_time = delays[idx]
 
-                name = str(row.get('이름', '')).strip()
-                school = str(row.get('학교명', '')).strip()
-                phone_last4 = str(row.get('전화번호 뒤 4자리', '')).strip().replace('.0', '')
-                role = str(row.get('구분(교/직원)', '')).strip()
-                lunch_str = str(row.get('점심식사 참석여부', '')).strip().upper()
-                dinner_str = str(row.get('저녁식사 참석여부', '')).strip().upper()
+        for idx in range(current_index, total_count):
+            row = shuffled_df.iloc[idx]
+            wait_time = delays[idx]
 
-                if not school or school.lower() == 'nan':
-                    st.session_state.result_logs.append({
-                        "이름": name if name else f"{idx+1}번 행",
-                        "학교명": "미기입",
-                        "처리 결과": "실패",
-                        "상세 사유": "학교명 누락"
-                    })
-                    progress_bar.progress((idx + 1) / total_count)
-                    continue
+            name = str(row.get('이름', '')).strip()
+            school = str(row.get('학교명', '')).strip()
+            phone_last4 = str(row.get('전화번호 뒤 4자리', '')).strip().replace('.0', '')
+            role = str(row.get('구분(교/직원)', '')).strip()
+            lunch_str = str(row.get('점심식사 참석여부', '')).strip().upper()
+            dinner_str = str(row.get('저녁식사 참석여부', '')).strip().upper()
 
-                if not name or name.lower() == 'nan':
-                    st.session_state.result_logs.append({
-                        "이름": f"{idx+1}번 행",
-                        "학교명": school,
-                        "처리 결과": "실패",
-                        "상세 사유": "이름 누락"
-                    })
-                    progress_bar.progress((idx + 1) / total_count)
-                    continue
+            if not school or school.lower() == 'nan':
+                result_logs.append({
+                    "이름": name if name else f"{idx+1}번 행",
+                    "학교명": "미기입",
+                    "처리 결과": "실패",
+                    "상세 사유": "학교명 누락"
+                })
+                save_checkpoint(idx + 1, shuffled_data, delays, result_logs, success_count, event_code)
+                progress_bar.progress((idx + 1) / total_count)
+                continue
 
-                if wait_time >= 0.1:
-                    step = 0.1
-                    for elapsed in range(int(wait_time / step)):
-                        elapsed_total = time.time() - start_time
-                        remaining_total = max(0, round(total_delay_sum - elapsed_total, 1))
-                        log_area.text(f"⏳ [{idx+1}/{total_count}] ({school}) {name} 선생님 입력 중... (예상 전체 작업시간 : {remaining_total}초 남음)")
-                        time.sleep(step)
-                else:
+            if not name or name.lower() == 'nan':
+                result_logs.append({
+                    "이름": f"{idx+1}번 행",
+                    "학교명": school,
+                    "처리 결과": "실패",
+                    "상세 사유": "이름 누락"
+                })
+                save_checkpoint(idx + 1, shuffled_data, delays, result_logs, success_count, event_code)
+                progress_bar.progress((idx + 1) / total_count)
+                continue
+
+            # 타이머 루프
+            if wait_time >= 0.1:
+                step = 0.1
+                for elapsed in range(int(wait_time / step)):
                     elapsed_total = time.time() - start_time
                     remaining_total = max(0, round(total_delay_sum - elapsed_total, 1))
                     log_area.text(f"⏳ [{idx+1}/{total_count}] ({school}) {name} 선생님 입력 중... (예상 전체 작업시간 : {remaining_total}초 남음)")
+                    time.sleep(step)
+            else:
+                elapsed_total = time.time() - start_time
+                remaining_total = max(0, round(total_delay_sum - elapsed_total, 1))
+                log_area.text(f"⏳ [{idx+1}/{total_count}] ({school}) {name} 선생님 입력 중... (예상 전체 작업시간 : {remaining_total}초 남음)")
 
-                payload = {
-                    "code": event_code,
-                    "name": name,
-                    "phone": phone_last4,
-                    "type": role,
-                    "department": school,
-                    "is_lunch": 1 if lunch_str in ['O', '1', 'TRUE', '참석'] else 0,
-                    "is_dinner": 1 if dinner_str in ['O', '1', 'TRUE', '참석'] else 0
-                }
+            payload = {
+                "code": event_code,
+                "name": name,
+                "phone": phone_last4,
+                "type": role,
+                "department": school,
+                "is_lunch": 1 if lunch_str in ['O', '1', 'TRUE', '참석'] else 0,
+                "is_dinner": 1 if dinner_str in ['O', '1', 'TRUE', '참석'] else 0
+            }
 
-                try:
-                    response = session.post(API_URL, data=payload, timeout=10)
-                    if response.status_code == 200:
-                        st.session_state.success_count += 1
-                        st.session_state.result_logs.append({
-                            "이름": name,
-                            "학교명": school,
-                            "처리 결과": "성공",
-                            "상세 사유": "출석 기입 완료"
-                        })
-                    else:
-                        st.session_state.result_logs.append({
-                            "이름": name,
-                            "학교명": school,
-                            "처리 결과": "실패",
-                            "상세 사유": f"서버 응답 에러 ({response.status_code})"
-                        })
-                except Exception as e:
-                    st.session_state.result_logs.append({
+            try:
+                response = session.post(API_URL, data=payload, timeout=10)
+                if response.status_code == 200:
+                    success_count += 1
+                    result_logs.append({
+                        "이름": name,
+                        "학교명": school,
+                        "처리 결과": "성공",
+                        "상세 사유": "출석 기입 완료"
+                    })
+                else:
+                    result_logs.append({
                         "이름": name,
                         "학교명": school,
                         "처리 결과": "실패",
-                        "상세 사유": f"통신 오류"
+                        "상세 사유": f"서버 응답 에러 ({response.status_code})"
                     })
+            except Exception as e:
+                result_logs.append({
+                    "이름": name,
+                    "학교명": school,
+                    "처리 결과": "실패",
+                    "상세 사유": f"통신 오류"
+                })
 
-                progress_bar.progress((idx + 1) / total_count)
+            # 진행 상황을 로컬 파일에 즉시 기록 (새로고침/탭 닫기 방어)
+            save_checkpoint(idx + 1, shuffled_data, delays, result_logs, success_count, event_code)
+            progress_bar.progress((idx + 1) / total_count)
 
-            # 모든 작업이 정상적으로 끝난 경우
-            st.session_state.job_status = "completed"
-            log_area.empty()
-            st.success(f"작업 완료! 전체 {total_count}건 중 {st.session_state.success_count}건 기입 성공했습니다.", icon=":material/notifications_active:")
+        # 전체 완수 시 파일 삭제
+        clear_checkpoint()
+        log_area.empty()
+        st.success(f"작업 완료! 전체 {total_count}건 중 {success_count}건 기입 성공했습니다.", icon=":material/notifications_active:")
 
-            st.subheader(":material/grading: 작업 상세 결과")
-            result_df = pd.DataFrame(st.session_state.result_logs)
-            st.dataframe(result_df, hide_index=True, use_container_width=True)
+        st.subheader(":material/grading: 작업 상세 결과")
+        result_df = pd.DataFrame(result_logs)
+        st.dataframe(result_df, hide_index=True, use_container_width=True)
 
-        except Exception as e:
-            # 외부 요인(새로고침 등)으로 끊겼을 때 상태 저장 처리
-            st.session_state.job_status = "interrupted"
-            st.error("통신이 끊어지거나 중단되었습니다. [이어하기] 버튼을 눌러 남은 작업을 진행하세요.")
-
-    # 앱을 로드했는데 중단된 기록이 있는 경우 안내 메시지 표시
-    elif st.session_state.job_status == "interrupted":
-        st.warning(f"⚠️ 이전 작업이 {st.session_state.current_index}명까지 진행 후 중단되었습니다. 이어서 진행하시겠습니까?", icon=":material/warning:")
-        
 except Exception as e:
     st.error(f"구글 시트를 읽어오는 중 오류가 발생했습니다: {e}", icon=":material/error:")
