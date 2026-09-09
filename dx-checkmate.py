@@ -6,7 +6,6 @@ import time
 
 st.set_page_config(page_title="DX-CheckMate", page_icon=":material/fact_check:", layout="wide")
 
-# 레이아웃 분할 (좌측: 메인 타이틀 및 설정 / 우측: 사용 설명서)
 col_title, col_guide = st.columns([1.5, 1])
 
 with col_title:
@@ -39,7 +38,6 @@ with col_guide:
 
 st.divider()
 
-# 선택된 모드에 따른 지연 시간 생성 함수 (Dynamic Time-Band System)
 def generate_decay_delays(num_people, mode):
     if num_people == 0:
         return []
@@ -106,22 +104,21 @@ try:
     preview_cols = ['이름', '학교명', '전화번호 뒤 4자리', '구분(교/직원)', '점심식사 참석여부', '저녁식사 참석여부']
     st.dataframe(target_df[[col for col in preview_cols if col in target_df.columns]], use_container_width=True)
 
-    # UI 모드 선택
     st.subheader(":material/tune: 출석 패턴 모드 선택")
     
+    # 물결표(~)를 하이픈(-)으로 교체하여 가로줄(취소선) 현상 수정
     exec_mode = st.radio(
         "연수 인원 및 현장 상황에 맞는 모드를 선택하세요.",
         [
             "⚡ [1분 이내 초고속 모드] (1분 이내 완료 / 긴급 출석 처리용)",
-            "🔥 [2분 초밀집 모드] (0~2분 완료 / 소규모 10~20명용)",
-            "🕵️ [4분 현장 표준 모드] (2~4분 완료 / 중규모 30~50명용)",
-            "🐢 [6분 완만 분산 모드] (4~6분 완료 / 대규모 60명 이상용)",
+            "🔥 [2분 초밀집 모드] (0 - 2분 완료 / 소규모 10 - 20명용)",
+            "🕵️ [4분 현장 표준 모드] (2 - 4분 완료 / 중규모 30 - 50명용)",
+            "🐢 [6분 완만 분산 모드] (4 - 6분 완료 / 대규모 60명 이상용)",
             "🚀 [고속 즉시 모드] (1초 이내 완료 / 시스템 테스트용)"
         ],
         index=2
     )
 
-    # 💡 위계 구조(층위)를 대분류/소분류로 명확히 정돈한 가이드 카드
     with st.expander("ℹ️ 자동 출석 시스템 세부 작동 원리 안내"):
         st.markdown("""
         이 시스템은 자동화 프로그램으로 감지되지 않도록 **사람들의 실제 출석 행동 패턴**을 수학적으로 재현합니다.
@@ -142,10 +139,7 @@ try:
         success_count = 0
         result_logs = []
 
-        # 1. 명단 무작위 셔플
         shuffled_df = target_df.sample(frac=1).reset_index(drop=True)
-
-        # 2. 동적 지연 시간 생성
         delays = generate_decay_delays(total_count, exec_mode)
 
         session = requests.Session()
@@ -158,12 +152,12 @@ try:
         for idx, (_, row) in enumerate(shuffled_df.iterrows()):
             wait_time = delays[idx]
             
-            # 실시간 타이머 UI 업데이트
+            # 개별 무작위 지연 안내 문구 직관적으로 변경
             if wait_time > 0:
                 step = 0.2
                 for elapsed in range(int(wait_time / step)):
                     remaining = round(wait_time - (elapsed * step), 1)
-                    log_area.text(f"⏳ 현장 자연스러운 패턴 대기 중... 다음 제출까지 {remaining}초")
+                    log_area.text(f"⏳ [{idx+1}/{total_count}명] 무작위 현장 패턴 대기 중... (이번 선생님 전송까지 {remaining}초)")
                     time.sleep(step)
 
             name = str(row.get('이름', '')).strip()
