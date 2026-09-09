@@ -56,6 +56,7 @@ def generate_decay_delays(num_people, mode):
     else:
         return [0] * num_people
 
+    # 구간별 인원 비율 배분 (초기 몰림 60% ➔ 감쇄 30% ➔ 마무리 10%)
     count_peak = int(num_people * 0.60)
     count_mid = int(num_people * 0.30)
     count_tail = num_people - count_peak - count_mid
@@ -65,15 +66,19 @@ def generate_decay_delays(num_people, mode):
 
     timestamps = []
 
+    # [전반부] 다수 기기의 동시 접속 폭주 구간 (소수점 밀리초 난수)
     for _ in range(count_peak):
         timestamps.append(random.uniform(0, t1))
 
+    # [중반부] 간헐적 접속 구간
     for _ in range(count_mid):
         timestamps.append(random.uniform(t1, t2))
 
+    # [후반부] 잔여 인원 개별 접속 구간
     for _ in range(count_tail):
         timestamps.append(random.uniform(t2, total_duration))
 
+    # 타임스탬프 정렬 및 간격 계산
     timestamps.sort()
     delays = []
     prev_t = 0
@@ -106,7 +111,6 @@ try:
 
     st.subheader(":material/tune: 출석 패턴 모드 선택")
     
-    # 물결표(~)를 하이픈(-)으로 교체하여 가로줄(취소선) 현상 수정
     exec_mode = st.radio(
         "연수 인원 및 현장 상황에 맞는 모드를 선택하세요.",
         [
@@ -127,7 +131,7 @@ try:
         * 구글 시트 1번 줄부터 순서대로 제출하면 매크로로 의심받을 수 있어, 제비뽑기처럼 명단 순서를 무작위로 뒤섞어서 전송합니다.
 
         **2. 시간대별 자연스러운 분산 제출 (60% ➔ 30% ➔ 10%)**
-        * **전반부 (초기 몰림 60%)**: 출석 안내 직후 연수자들이 한꺼번에 제출하는 현상 재현
+        * **전반부 (초기 몰림 60%)**: 현장 안내 직후 다수의 연수 기기(스마트폰)에서 동시다발적으로 무작위 폭주 제출하는 현상 재현
         * **중반부 (완만 감쇄 30%)**: 뒤늦게 안내를 확인한 연수자들이 드문드문 제출하는 현상 재현
         * **후반부 (잔여 마무리 10%)**: 마감 직전 마지막 남은 인원이 제출하는 현상 재현
         """)
@@ -152,12 +156,12 @@ try:
         for idx, (_, row) in enumerate(shuffled_df.iterrows()):
             wait_time = delays[idx]
             
-            # 개별 무작위 지연 안내 문구 직관적으로 변경
-            if wait_time > 0:
-                step = 0.2
+            # 동시 제출(0.1초 미만)은 UI 지연 없이 즉시 연속 발송
+            if wait_time >= 0.1:
+                step = 0.1
                 for elapsed in range(int(wait_time / step)):
                     remaining = round(wait_time - (elapsed * step), 1)
-                    log_area.text(f"⏳ [{idx+1}/{total_count}명] 무작위 현장 패턴 대기 중... (이번 선생님 전송까지 {remaining}초)")
+                    log_area.text(f"⏳ [{idx+1}/{total_count}명] 무작위 현장 패턴 대기 중... (다음 전송까지 {remaining}초)")
                     time.sleep(step)
 
             name = str(row.get('이름', '')).strip()
