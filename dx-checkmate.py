@@ -9,23 +9,21 @@ import uuid
 
 st.set_page_config(page_title="DX-CheckMate", page_icon=":material/fact_check:", layout="wide")
 
-# 사용자별 고유 세션 ID 생성
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())[:8]
 
 col_title, col_guide = st.columns([1.5, 1])
 
-# 고정 마스터 구글 시트 ID
 SHEET_ID = "1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU"
 SHEET_WEB_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 ADMIN_WEB_URL = "https://cms.dxcheck.kr/admin/event"
 API_URL = "https://api.dxcheck.kr/api/v1/attendance"
 
-# 시트 탭별 GID 설정 (실제 구글 시트 각 탭의 GID값)
+# 제공해 주신 1, 2, 3번 탭 GID 완벽 반영
 TAB_CONFIG = {
-    "1차수 (출석체크_1)": "1678272994",
-    "2차수 (출석체크_2)": "0",
-    "3차수 (출석체크_3)": "11223344"
+    "출석체크_1": "1678272994",
+    "출석체크_2": "1005009417",
+    "출석체크_3": "508140271"
 }
 
 with col_title:
@@ -42,15 +40,14 @@ with col_guide:
     st.info("""
     **💡 사용 방법 가이드**
     1. **[출석체크 구글 시트]** 버튼을 눌러 대상자 데이터를 기입하고 '출석하기'를 체크합니다.
-    2. 아래에서 진행할 **[차수 선택]** 클릭 후 실행 모드를 고릅니다.
-    3. **[자동 출석체크 시작하기]** 버튼을 누르면 해당 차수의 2행 URL을 읽어 자동 처리됩니다.
+    2. 아래에서 진행할 **[출석 탭]** 선택 후 실행 모드를 고릅니다.
+    3. **[자동 출석체크 시작하기]** 버튼을 누르면 해당 탭의 2행 URL을 읽어 자동 처리됩니다.
     """)
 
 st.divider()
 
-# 차수 단일 선택 (사용자 복잡도 최소화)
 selected_tab_name = st.radio(
-    "📌 진행할 연수 차수를 선택하세요",
+    "📌 진행할 출석 시트 탭을 선택하세요",
     options=list(TAB_CONFIG.keys()),
     horizontal=True
 )
@@ -129,7 +126,6 @@ def clear_checkpoint():
     if os.path.exists(CHECKPOINT_FILE):
         os.remove(CHECKPOINT_FILE)
 
-# 선택한 차수 탭 CSV 자동 동기화
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={current_gid}"
 
 try:
@@ -144,7 +140,7 @@ try:
     event_code = form_url.rstrip('/').split('/')[-1] if form_url else ""
     df = pd.read_csv(CSV_URL, header=2)
     
-    st.success(f"[{selected_tab_name}] 실시간 출석 URL 자동 인식: {form_url}", icon=":material/link:")
+    st.success(f"[{selected_tab_name}] 실시간 출석 URL 인식 완료: {form_url}", icon=":material/link:")
     
     target_df = df[df['출석하기'].astype(str).str.upper().isin(['TRUE', 'O', 'V', '1'])]
     
