@@ -9,13 +9,15 @@ import uuid
 
 st.set_page_config(page_title="DX-CheckMate 자동 출석", page_icon=":material/fact_check:", layout="wide")
 
-# 세션 상태 초기화 (작업 실행 중 여부 및 선택 시트 상태 관리)
+# 세션 상태 초기화 (작업 실행 중 여부, 선택 시트, 완료 결과 저장)
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())[:8]
 if "is_running" not in st.session_state:
     st.session_state.is_running = False
 if "selected_tab" not in st.session_state:
     st.session_state.selected_tab = "출석체크_1"
+if "completed_results" not in st.session_state:
+    st.session_state.completed_results = None
 
 SHEET_ID = "1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU"
 SHEET_WEB_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
@@ -45,16 +47,15 @@ with col_guide:
     **💡 사용 방법 가이드**
     1. 각 학교의 **개별 시트('연수자 명단' 탭)**에 기입된 정보를 복사합니다.
     2. **[출석체크 구글 시트]** 버튼을 눌러, 대상자 데이터를 붙여넣기(입력) 합니다.
-    3. 이번에 출석을 진행할 인원들의 **'출석하기'** 열 체크박스를 선택합니다.
-    4. 아래에서 실행 모드 선택 후 **[자동 출석체크 시작하기]** 버튼을 클릭합니다.
-    5. 제출이 완료되면 **[CMS 프로그램 출결관리]**에서 최종 결과를 확인합니다.
+    3. 이번에 출석을 진행할 **실시간 출석 URL 주소**를 시트 2행에 붙여넣습니다.
+    4. 이번에 출석을 진행할 인원들의 **'출석하기'** 열 체크박스를 선택합니다.
+    5. 본 탭(웹)으로 돌아와 진행할 시트 선택 및 실행모드 선택 후 **[자동 출석체크 시작하기]** 버튼을 클릭합니다.
+    6. 제출이 완료되면 **[CMS 프로그램 출결관리]**에서 최종 결과를 확인합니다.
     """)
 
 st.divider()
 
-# =========================================================
-# 📌 시트 선택 상자 (작업 실행 중일 때 숨김 처리)
-# =========================================================
+# 시트 선택 상자 제어 (작업 진행 중일 때만 잠금/숨김)
 if not st.session_state.is_running:
     selected_tab_name = st.radio(
         "📌 진행할 출석 시트 탭을 선택하세요",
@@ -205,17 +206,18 @@ try:
         if reset_btn:
             clear_checkpoint()
             st.session_state.is_running = False
+            st.session_state.completed_results = None
             st.rerun()
     else:
         resume_btn = False
         start_btn = st.button("자동 출석체크 시작하기", type="primary", disabled=st.session_state.is_running)
 
     if (not saved_cp and start_btn) or (saved_cp and resume_btn):
-        # 🔒 실행 시작 시 상태 변경 (선택 상자 감춤 트리거)
         st.session_state.is_running = True
+        st.session_state.completed_results = None
         st.rerun()
 
-    # 실제 실행 처리 구역
+    # 실시간 처리 구역
     if st.session_state.is_running:
         progress_bar = st.progress(0)
         log_area = st.empty()
@@ -349,18 +351,28 @@ try:
                 save_checkpoint(idx + 1, shuffled_data, delays, result_logs, success_count, event_code, current_elapsed)
                 progress_bar.progress((idx + 1) / total_count)
 
-            # 모든 작업 완료 시 잠금 해제 및 파일 삭제
+            # 작업 완료 후 결과 저장 및 잠금 해제(Rerun)
             clear_checkpoint()
+            st.session_state.completed_results = {
+                "tab_name": selected_tab_name,
+                "total_count": total_count,
+                "success_count": success_count,
+                "logs": result_logs
+            }
             st.session_state.is_running = False
-            log_area.empty()
-            st.success(f"작업 완료! 전체 {total_count}건 중 {success_count}건 기입 성공했습니다.", icon=":material/notifications_active:")
-
-            st.subheader(":material/grading: 작업 상세 결과")
-            result_df = pd.DataFrame(result_logs)
-            st.dataframe(result_df, hide_index=True, use_container_width=True)
+            st.rerun()
 
         except Exception as e:
             st.error(f"작업 진행 중 오류 발생: {e}")
+
+    # 작업 완료 결과 출력 영역
+    if not st.session_state.is_running and st.session_state.completed_results:
+        res = st.session_state.completed_results
+        if res.get("tab_name") == selected_tab_name:
+            st.success(f"작업 완료! [{res['tab_name']}] 전체 {res['total_count']}건 중 {res['success_count']}건 기입 성공했습니다.", icon=":material/notifications_active:")
+            st.subheader(":material/grading: 작업 상세 결과")
+            result_df = pd.DataFrame(res['logs'])
+            st.dataframe(result_df, hide_index=True, use_container_width=True)
 
 except Exception as e:
     st.error(f"구글 시트를 읽어오는 중 오류가 발생했습니다: {e}", icon=":material/error:")
