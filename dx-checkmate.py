@@ -87,15 +87,16 @@ def generate_decay_delays(num_people, mode):
 
     return delays
 
-# --- 파일 기반 체크포인트 제어 함수 ---
-def save_checkpoint(current_index, shuffled_data, delays, result_logs, success_count, event_code):
+# --- 파일 기반 체크포인트 제어 함수 (누적 경과 시간 포함) ---
+def save_checkpoint(current_index, shuffled_data, delays, result_logs, success_count, event_code, elapsed_base):
     checkpoint_data = {
         "current_index": current_index,
         "shuffled_data": shuffled_data,
         "delays": delays,
         "result_logs": result_logs,
         "success_count": success_count,
-        "event_code": event_code
+        "event_code": event_code,
+        "elapsed_base": elapsed_base
     }
     with open(CHECKPOINT_FILE, "w", encoding="utf-8") as f:
         json.dump(checkpoint_data, f, ensure_ascii=False, indent=2)
@@ -161,7 +162,6 @@ try:
         * **후반부 (잔여 마무리 10%)**: 마감 직전 마지막 남은 인원이 제출하는 현상 재현
         """)
 
-    # 저장된 중단 기록 확인
     saved_cp = load_checkpoint()
     
     if saved_cp and saved_cp.get("event_code") == event_code:
@@ -192,6 +192,7 @@ try:
             delays = saved_cp["delays"]
             result_logs = saved_cp["result_logs"]
             success_count = saved_cp["success_count"]
+            elapsed_base = saved_cp.get("elapsed_base", 0)
             shuffled_df = pd.DataFrame(shuffled_data)
         else:
             clear_checkpoint()
@@ -201,6 +202,7 @@ try:
             delays = generate_decay_delays(len(target_df), exec_mode)
             result_logs = []
             success_count = 0
+            elapsed_base = 0
 
         total_count = len(shuffled_df)
         remaining_delays = delays[current_index:]
@@ -213,7 +215,7 @@ try:
             "Origin": "https://dxcheck.kr"
         })
 
-        start_time = time.time()
+        start_time = time.time() - elapsed_base
 
         for idx in range(current_index, total_count):
             row = shuffled_df.iloc[idx]
@@ -226,14 +228,21 @@ try:
             lunch_str = str(row.get('점심식사 참석여부', '')).strip().upper()
             dinner_str = str(row.get('저녁식사 참석여부', '')).strip().upper()
 
+            # 현재 경과 시간 계산 함수
+            def get_formatted_time():
+                sec = int(time.time() - start_time)
+                return f"{sec // 60:02d}분 {sec % 60:02d}초"
+
             if not school or school.lower() == 'nan':
                 result_logs.append({
                     "이름": name if name else f"{idx+1}번 행",
                     "학교명": "미기입",
+                    "응답 시간": get_formatted_time(),
                     "처리 결과": "실패",
                     "상세 사유": "학교명 누락"
                 })
-                save_checkpoint(idx + 1, shuffled_data, delays, result_logs, success_count, event_code)
+                current_elapsed = time.time() - start_time
+                save_checkpoint(idx + 1, shuffled_data, delays, result_logs, success_count, event_code, current_elapsed)
                 progress_bar.progress((idx + 1) / total_count)
                 continue
 
@@ -241,24 +250,26 @@ try:
                 result_logs.append({
                     "이름": f"{idx+1}번 행",
                     "학교명": school,
+                    "응답 시간": get_formatted_time(),
                     "처리 결과": "실패",
                     "상세 사유": "이름 누락"
                 })
-                save_checkpoint(idx + 1, shuffled_data, delays, result_logs, success_count, event_code)
+                current_elapsed = time.time() - start_time
+                save_checkpoint(idx + 1, shuffled_data, delays, result_logs, success_count, event_code, current_elapsed)
                 progress_bar.progress((idx + 1) / total_count)
                 continue
 
-            # 타이머 루프
+            # 타이머 대기
             if wait_time >= 0.1:
                 step = 0.1
                 for elapsed in range(int(wait_time / step)):
                     elapsed_total = time.time() - start_time
-                    remaining_total = max(0, round(total_delay_sum - elapsed_total, 1))
+                    remaining_total = max(0, round(total_delay_sum - (elapsed_total - elapsed_base), 1))
                     log_area.text(f"⏳ [{idx+1}/{total_count}] ({school}) {name} 선생님 입력 중... (예상 전체 작업시간 : {remaining_total}초 남음)")
                     time.sleep(step)
             else:
                 elapsed_total = time.time() - start_time
-                remaining_total = max(0, round(total_delay_sum - elapsed_total, 1))
+                remaining_total = max(0, round(total_delay_sum - (elapsed_total - elapsed_base), 1))
                 log_area.text(f"⏳ [{idx+1}/{total_count}] ({school}) {name} 선생님 입력 중... (예상 전체 작업시간 : {remaining_total}초 남음)")
 
             payload = {
@@ -271,6 +282,8 @@ try:
                 "is_dinner": 1 if dinner_str in ['O', '1', 'TRUE', '참석'] else 0
             }
 
+            resp_time_str = get_formatted_time()
+
             try:
                 response = session.post(API_URL, data=payload, timeout=10)
                 if response.status_code == 200:
@@ -278,6 +291,7 @@ try:
                     result_logs.append({
                         "이름": name,
                         "학교명": school,
+                        "응답 시간": resp_time_str,
                         "처리 결과": "성공",
                         "상세 사유": "출석 기입 완료"
                     })
@@ -285,6 +299,7 @@ try:
                     result_logs.append({
                         "이름": name,
                         "학교명": school,
+                        "응답 시간": resp_time_str,
                         "처리 결과": "실패",
                         "상세 사유": f"서버 응답 에러 ({response.status_code})"
                     })
@@ -292,15 +307,15 @@ try:
                 result_logs.append({
                     "이름": name,
                     "학교명": school,
+                    "응답 시간": resp_time_str,
                     "처리 결과": "실패",
                     "상세 사유": f"통신 오류"
                 })
 
-            # 진행 상황을 로컬 파일에 즉시 기록 (새로고침/탭 닫기 방어)
-            save_checkpoint(idx + 1, shuffled_data, delays, result_logs, success_count, event_code)
+            current_elapsed = time.time() - start_time
+            save_checkpoint(idx + 1, shuffled_data, delays, result_logs, success_count, event_code, current_elapsed)
             progress_bar.progress((idx + 1) / total_count)
 
-        # 전체 완수 시 파일 삭제
         clear_checkpoint()
         log_area.empty()
         st.success(f"작업 완료! 전체 {total_count}건 중 {success_count}건 기입 성공했습니다.", icon=":material/notifications_active:")
