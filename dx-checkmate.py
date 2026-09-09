@@ -1,16 +1,17 @@
 import streamlit as st
 import pandas as pd
 import requests
+import random
+import time
 
-# 페이지 탭 아이콘 세팅
 st.set_page_config(page_title="DX-CheckMate", page_icon=":material/fact_check:", layout="wide")
 
-# 레이아웃 분할 (좌측: 메인 타이틀 및 버튼 / 우측: 사용 설명서)
+# 레이아웃 분할 (좌측: 메인 타이틀 및 설정 / 우측: 사용 설명서)
 col_title, col_guide = st.columns([1.5, 1])
 
 with col_title:
     st.title(":material/how_to_reg: DX-CheckMate 자동 출석")
-    st.caption("구글 스프레드시트 '출석체크' 탭 데이터를 읽어와 백엔드 API로 직접 자동 출석을 제출합니다.")
+    st.caption("구글 스프레드시트 데이터를 읽어와 백엔드 API로 현장 패턴에 맞게 자동 출석을 제출합니다.")
 
     SHEET_ID = "1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU"
     GID = "1678272994"
@@ -20,28 +21,73 @@ with col_title:
 
     API_URL = "https://api.dxcheck.kr/api/v1/attendance"
 
-    # 바로가기 버튼 2개를 나란히 배치
     btn_col1, btn_col2 = st.columns(2)
     with btn_col1:
         st.link_button("출석체크 구글 시트 바로가기", SHEET_WEB_URL, icon=":material/table_view:", use_container_width=True)
     with btn_col2:
-        # 버튼 명칭 변경 적용
         st.link_button("CMS 프로그램 출결관리 바로가기", ADMIN_WEB_URL, icon=":material/admin_panel_settings:", use_container_width=True)
 
 with col_guide:
     st.info("""
     **💡 사용 방법 가이드**
     1. 각 학교의 **개별 시트('연수자 명단' 탭)**에 기입된 정보를 복사합니다.
-    2. 왼쪽의 **[출석체크 구글 시트]** 버튼을 눌러, 대상자 데이터를 붙여넣기(입력) 합니다.
+    2. **[출석체크 구글 시트]** 버튼을 눌러, 대상자 데이터를 붙여넣기(입력) 합니다.
     3. 이번에 출석을 진행할 인원들의 **'출석하기'** 열 체크박스를 선택합니다.
-    4. 본 웹 화면으로 돌아와 아래의 **[자동 출석체크 시작하기]** 버튼을 클릭합니다.
+    4. 아래에서 실행 모드 선택 후 **[자동 출석체크 시작하기]** 버튼을 클릭합니다.
     5. 제출이 완료되면 **[CMS 프로그램 출결관리]**에서 최종 결과를 확인합니다.
     """)
 
 st.divider()
 
+# 선택된 모드에 따른 지연 시간 생성 함수 (Dynamic Time-Band System)
+def generate_decay_delays(num_people, mode):
+    if num_people == 0:
+        return []
+
+    # 모드별 총 소요 시간 범위 지정 (초 단위)
+    if "2분 초밀집" in mode:
+        total_duration = random.uniform(90, 120)       # 1.5분 ~ 2분
+    elif "4분 현장 표준" in mode:
+        total_duration = random.uniform(180, 240)     # 3분 ~ 4분
+    elif "6분 완만 분산" in mode:
+        total_duration = random.uniform(300, 360)     # 5분 ~ 6분
+    else:  # 고속 즉시 모드
+        total_duration = random.uniform(15, 40)       # 1분 이내 완료
+
+    # 1. 구간별 인원 비율 배분 (60% ➔ 30% ➔ 10%)
+    count_peak = int(num_people * 0.60)
+    count_mid = int(num_people * 0.30)
+    count_tail = num_people - count_peak - count_mid
+
+    # 2. 총 소요 시간 대비 구간 시점 자동 계산
+    t1 = total_duration * 0.40  # 전반부 40% 시간
+    t2 = total_duration * 0.80  # 중반부 80% 시간
+
+    timestamps = []
+
+    # [전반부] 60% 몰림 구간
+    for _ in range(count_peak):
+        timestamps.append(random.uniform(0, t1))
+
+    # [중반부] 30% 감쇄 구간
+    for _ in range(count_mid):
+        timestamps.append(random.uniform(t1, t2))
+
+    # [후반부] 10% 마무리 구간
+    for _ in range(count_tail):
+        timestamps.append(random.uniform(t2, total_duration))
+
+    # 3. 시간순 정렬 및 대기 간격 계산
+    timestamps.sort()
+    delays = []
+    prev_t = 0
+    for t in timestamps:
+        delays.append(t - prev_t)
+        prev_t = t
+
+    return delays
+
 try:
-    # 매 로딩 시 구글 시트 실시간 데이터 직접 로드
     df_raw = pd.read_csv(CSV_URL, header=None)
     form_url = ""
     for cell in df_raw.iloc[1].dropna():
@@ -55,7 +101,6 @@ try:
     
     st.success(f"실시간 출석 URL 인식 완료: {form_url}", icon=":material/link:")
     
-    # '출석하기' 열 필터링
     target_df = df[df['출석하기'].astype(str).str.upper().isin(['TRUE', 'O', 'V', '1'])]
     
     st.write(f":material/list_alt: 현재 출석체크 대상자: **총 {len(target_df)}명**")
@@ -63,13 +108,43 @@ try:
     preview_cols = ['이름', '학교명', '전화번호 뒤 4자리', '구분(교/직원)', '점심식사 참석여부', '저녁식사 참석여부']
     st.dataframe(target_df[[col for col in preview_cols if col in target_df.columns]], use_container_width=True)
 
+    # UI 모드 선택
+    st.subheader(":material/tune: 출석 패턴 모드 선택")
+    
+    exec_mode = st.radio(
+        "연수 인원 및 현장 상황에 맞는 모드를 선택하세요.",
+        [
+            "⚡ [2분 초밀집 모드] (소규모 10~20명 / 짧은 쉬는 시간용)",
+            "🕵️ [4분 현장 표준 모드] (중규모 30~50명 / 표준 현장 패턴)",
+            "🐢 [6분 완만 분산 모드] (대규모 60명 이상 / 여유로운 분산 제출)",
+            "🚀 [고속 즉시 모드] (1분 이내 완료 / 시스템 테스트용)"
+        ],
+        index=1
+    )
+
+    # 사용자 이해를 돕는 시각적 가이드 카드
+    with st.expander("ℹ️ 가변 구간 타임패턴 시스템(Dynamic Time-Band System) 작동 방식 안내"):
+        st.markdown("""
+        이 시스템은 기계적인 일괄 제출을 방지하기 위해 **사람들이 쉬는 시간에 한꺼번에 몰렸다 줄어드는 실제 현장 행동 패턴**을 수학적으로 재현합니다.
+
+        * **전반부 (초기 몰림 60%)**: 출석 안내 직후 연수자가 한꺼번에 몰리는 현상 재현
+        * **중반부 (완만 감쇄 30%)**: 늦게 확인한 연수자들이 드문드문 들어오는 현상 재현
+        * **후반부 (잔여 마무리 10%)**: 마감 직전 마지막 인원이 제출하는 현상 재현
+        * **순서 무작위 셔플**: 구글 시트 명단 순서와 관계없이 완전히 뒤섞여 전송됩니다.
+        """)
+
     if st.button("자동 출석체크 시작하기", type="primary"):
+        total_count = len(target_df)
         progress_bar = st.progress(0)
         log_area = st.empty()
         success_count = 0
-        total_count = len(target_df)
-
         result_logs = []
+
+        # 1. 명단 무작위 셔플
+        shuffled_df = target_df.sample(frac=1).reset_index(drop=True)
+
+        # 2. 동적 지연 시간 생성
+        delays = generate_decay_delays(total_count, exec_mode)
 
         session = requests.Session()
         session.headers.update({
@@ -78,7 +153,17 @@ try:
             "Origin": "https://dxcheck.kr"
         })
 
-        for idx, (_, row) in enumerate(target_df.iterrows()):
+        for idx, (_, row) in enumerate(shuffled_df.iterrows()):
+            wait_time = delays[idx]
+            
+            # 실시간 타이머 UI 업데이트
+            if wait_time > 0:
+                step = 0.2
+                for elapsed in range(int(wait_time / step)):
+                    remaining = round(wait_time - (elapsed * step), 1)
+                    log_area.text(f"⏳ 현장 자연스러운 패턴 대기 중... 다음 제출까지 {remaining}초")
+                    time.sleep(step)
+
             name = str(row.get('이름', '')).strip()
             school = str(row.get('학교명', '')).strip()
             phone_last4 = str(row.get('전화번호 뒤 4자리', '')).strip().replace('.0', '')
