@@ -3,7 +3,7 @@ import pandas as pd
 import os
 
 # Playwright 자동 브라우저 설치
-os.system("playwright install chromium")
+os.system("playwright install --with-deps chromium")
 from playwright.sync_api import sync_playwright
 
 st.set_page_config(page_title="DX-CheckMate", page_icon="✅")
