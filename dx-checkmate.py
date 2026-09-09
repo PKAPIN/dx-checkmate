@@ -9,7 +9,6 @@ import uuid
 
 st.set_page_config(page_title="DX-CheckMate", page_icon=":material/fact_check:", layout="wide")
 
-# 사용자별 고유 세션 ID 생성 (동시 사용자 격리)
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())[:8]
 
@@ -24,9 +23,8 @@ with col_title:
     ADMIN_WEB_URL = "https://cms.dxcheck.kr/admin/event"
     API_URL = "https://api.dxcheck.kr/api/v1/attendance"
 
-    # 구글 시트 URL 입력 받기 (외부 사용자용)
     default_sheet_id = "1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU"
-    default_sheet_url = f"https://docs.google.com/spreadsheets/d/{default_sheet_id}/edit#gid=1678272994"
+    default_sheet_url = f"https://docs.google.com/spreadsheets/d/{default_sheet_id}/edit"
     
     input_sheet_url = st.text_input(
         "출석체크 구글 시트 주소 (URL)", 
@@ -43,14 +41,25 @@ with col_title:
 with col_guide:
     st.info("""
     **💡 사용 방법 가이드**
-    1. 각 학교의 **개별 시트('연수자 명단' 탭)**에 기입된 정보를 복사합니다.
-    2. **[출석체크 구글 시트 주소]** 입력창에 대상 시트 URL을 넣습니다.
-    3. 이번에 출석을 진행할 인원들의 **'출석하기'** 열 체크박스를 선택합니다.
-    4. 아래에서 실행 모드 선택 후 **[자동 출석체크 시작하기]** 버튼을 클릭합니다.
-    5. 브라우저를 새로고침하거나 닫아도 **[중단된 작업 이어서 시작하기]**로 복구할 수 있습니다.
+    1. 구글 시트 주소를 입력하고, 진행할 **출석 시트(차수)**를 다중 선택합니다.
+    2. 동시 진행 시 1·2·3차수 명단이 하나로 섞여 현장 동시 제출 패턴으로 처리됩니다.
+    3. 아래에서 실행 모드 선택 후 **[자동 출석체크 시작하기]** 버튼을 클릭합니다.
     """)
 
 st.divider()
+
+# 차수별 시트 GID 설정 (실제 구글 시트 탭의 GID 기입)
+SHEET_TABS = {
+    "1차수 (출석시트_1)": "1678272994",
+    "2차수 (출석시트_2)": "0",
+    "3차수 (출석시트_3)": "11223344"
+}
+
+selected_sheets = st.multiselect(
+    "📌 진행할 출석 시트(차수)를 선택하세요 (다중 선택 시 동시 진행)",
+    options=list(SHEET_TABS.keys()),
+    default=["1차수 (출석시트_1)"]
+)
 
 def generate_decay_delays(num_people, mode):
     if num_people == 0:
@@ -123,43 +132,52 @@ def clear_checkpoint():
     if os.path.exists(CHECKPOINT_FILE):
         os.remove(CHECKPOINT_FILE)
 
-# 구글 시트 URL에서 Sheet ID 및 GID 추출 파싱
-def parse_sheet_url(url):
+def parse_sheet_id(url):
     try:
-        sheet_id = url.split("/d/")[1].split("/")[0]
-        gid = "0"
-        if "gid=" in url:
-            gid = url.split("gid=")[1].split("&")[0].split("#")[0]
-        return sheet_id, gid
+        return url.split("/d/")[1].split("/")[0]
     except Exception:
-        return None, None
+        return None
 
-sheet_id, gid = parse_sheet_url(input_sheet_url)
+sheet_id = parse_sheet_id(input_sheet_url)
 
-if not sheet_id:
-    st.error("올바른 구글 시트 URL을 입력해 주세요.")
+if not sheet_id or not selected_sheets:
+    st.error("올바른 구글 시트 URL을 입력하고 1개 이상의 차수를 선택해 주세요.")
 else:
-    CSV_URL = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+    combined_targets = []
+    event_code_main = ""
 
-    try:
-        df_raw = pd.read_csv(CSV_URL, header=None)
-        form_url = ""
-        for cell in df_raw.iloc[1].dropna():
-            cell_str = str(cell).strip()
-            if cell_str.startswith("http"):
-                form_url = cell_str
-                break
-                
-        event_code = form_url.rstrip('/').split('/')[-1] if form_url else ""
-        df = pd.read_csv(CSV_URL, header=2)
+    # 선택된 모든 시트 데이터 읽어와서 하나로 통합
+    for tab_name in selected_sheets:
+        gid = SHEET_TABS[tab_name]
+        CSV_URL = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+
+        try:
+            df_raw = pd.read_csv(CSV_URL, header=None)
+            form_url = ""
+            for cell in df_raw.iloc[1].dropna():
+                cell_str = str(cell).strip()
+                if cell_str.startswith("http"):
+                    form_url = cell_str
+                    break
+            
+            event_code = form_url.rstrip('/').split('/')[-1] if form_url else ""
+            if event_code:
+                event_code_main = event_code
+
+            df = pd.read_csv(CSV_URL, header=2)
+            target = df[df['출석하기'].astype(str).str.upper().isin(['TRUE', 'O', 'V', '1'])].copy()
+            target['구분_차수'] = tab_name  # 차수 태그 추가
+            combined_targets.append(target)
+        except Exception as e:
+            st.warning(f"[{tab_name}] 데이터를 읽어오는 중 오류 발생: {e}")
+
+    if combined_targets:
+        target_df = pd.concat(combined_targets, ignore_index=True)
         
-        st.success(f"실시간 출석 URL 인식 완료: {form_url}", icon=":material/link:")
+        st.success(f"선택한 {len(selected_sheets)}개 차수 명단 인식 완료 (이벤트 코드: {event_code_main})", icon=":material/link:")
+        st.write(f":material/list_alt: 통합 동시 출석 대상자: **총 {len(target_df)}명**")
         
-        target_df = df[df['출석하기'].astype(str).str.upper().isin(['TRUE', 'O', 'V', '1'])]
-        
-        st.write(f":material/list_alt: 현재 출석체크 대상자: **총 {len(target_df)}명**")
-        
-        preview_cols = ['이름', '학교명', '전화번호 뒤 4자리', '구분(교/직원)', '점심식사 참석여부', '저녁식사 참석여부']
+        preview_cols = ['구분_차수', '이름', '학교명', '전화번호 뒤 4자리', '구분(교/직원)', '점심식사 참석여부', '저녁식사 참석여부']
         st.dataframe(target_df[[col for col in preview_cols if col in target_df.columns]], use_container_width=True)
 
         st.subheader(":material/tune: 출석 패턴 모드 선택")
@@ -181,17 +199,15 @@ else:
             이 시스템은 자동화 프로그램으로 감지되지 않도록 **사람들의 실제 출석 행동 패턴**을 수학적으로 재현합니다.
 
             **1. 명단 순서 무작위 섞기 (랜덤 셔플)**
-            * 구글 시트 1번 줄부터 순서대로 제출하면 매크로로 의심받을 수 있어, 제비뽑기처럼 명단 순서를 무작위로 뒤섞어서 전송합니다.
+            * 선택된 차수의 전체 명단을 제비뽑기처럼 무작위로 뒤섞어서 전송하므로 매크로 감지를 완벽히 회피합니다.
 
             **2. 시간대별 자연스러운 분산 제출 (60% ➔ 30% ➔ 10%)**
-            * **전반부 (초기 몰림 60%)**: 현장 안내 직후 다수의 연수 기기(스마트폰)에서 동시다발적으로 무작위 폭주 제출하는 현상 재현
-            * **중반부 (완만 감쇄 30%)**: 뒤늦게 안내를 확인한 연수자들이 드문드문 제출하는 현상 재현
-            * **후반부 (잔여 마무리 10%)**: 마감 직전 마지막 남은 인원이 제출하는 현상 재현
+            * 여러 차수의 연수생들이 쉬는 시간에 동시다발적으로 각자 스마트폰으로 제출하는 폭주 현상을 그대로 재현합니다.
             """)
 
         saved_cp = load_checkpoint()
         
-        if saved_cp and saved_cp.get("event_code") == event_code:
+        if saved_cp and saved_cp.get("event_code") == event_code_main:
             processed_num = saved_cp.get("current_index", 0)
             total_num = len(saved_cp.get("shuffled_data", []))
             st.warning(f"⚠️ 이전 작업이 중단된 기록이 있습니다. ({processed_num}/{total_num}명 진행 완료)", icon=":material/warning:")
@@ -248,6 +264,7 @@ else:
                 row = shuffled_df.iloc[idx]
                 wait_time = delays[idx]
 
+                tab_info = str(row.get('구분_차수', '')).split(' ')[0]
                 name = str(row.get('이름', '')).strip()
                 school = str(row.get('학교명', '')).strip()
                 phone_last4 = str(row.get('전화번호 뒤 4자리', '')).strip().replace('.0', '')
@@ -261,6 +278,7 @@ else:
 
                 if not school or school.lower() == 'nan':
                     result_logs.append({
+                        "차수": tab_info,
                         "이름": name if name else f"{idx+1}번 행",
                         "학교명": "미기입",
                         "응답 시간": get_formatted_time(),
@@ -268,12 +286,13 @@ else:
                         "상세 사유": "학교명 누락"
                     })
                     current_elapsed = time.time() - start_time
-                    save_checkpoint(idx + 1, shuffled_data, delays, result_logs, success_count, event_code, current_elapsed)
+                    save_checkpoint(idx + 1, shuffled_data, delays, result_logs, success_count, event_code_main, current_elapsed)
                     progress_bar.progress((idx + 1) / total_count)
                     continue
 
                 if not name or name.lower() == 'nan':
                     result_logs.append({
+                        "차수": tab_info,
                         "이름": f"{idx+1}번 행",
                         "학교명": school,
                         "응답 시간": get_formatted_time(),
@@ -281,7 +300,7 @@ else:
                         "상세 사유": "이름 누락"
                     })
                     current_elapsed = time.time() - start_time
-                    save_checkpoint(idx + 1, shuffled_data, delays, result_logs, success_count, event_code, current_elapsed)
+                    save_checkpoint(idx + 1, shuffled_data, delays, result_logs, success_count, event_code_main, current_elapsed)
                     progress_bar.progress((idx + 1) / total_count)
                     continue
 
@@ -290,15 +309,15 @@ else:
                     for elapsed in range(int(wait_time / step)):
                         elapsed_total = time.time() - start_time
                         remaining_total = max(0, round(total_delay_sum - (elapsed_total - elapsed_base), 1))
-                        log_area.text(f"⏳ [{idx+1}/{total_count}] ({school}) {name} 선생님 입력 중... (예상 전체 작업시간 : {remaining_total}초 남음)")
+                        log_area.text(f"⏳ [{idx+1}/{total_count}] [{tab_info}] ({school}) {name} 선생님 입력 중... (예상 전체 작업시간 : {remaining_total}초 남음)")
                         time.sleep(step)
                 else:
                     elapsed_total = time.time() - start_time
                     remaining_total = max(0, round(total_delay_sum - (elapsed_total - elapsed_base), 1))
-                    log_area.text(f"⏳ [{idx+1}/{total_count}] ({school}) {name} 선생님 입력 중... (예상 전체 작업시간 : {remaining_total}초 남음)")
+                    log_area.text(f"⏳ [{idx+1}/{total_count}] [{tab_info}] ({school}) {name} 선생님 입력 중... (예상 전체 작업시간 : {remaining_total}초 남음)")
 
                 payload = {
-                    "code": event_code,
+                    "code": event_code_main,
                     "name": name,
                     "phone": phone_last4,
                     "type": role,
@@ -314,6 +333,7 @@ else:
                     if response.status_code == 200:
                         success_count += 1
                         result_logs.append({
+                            "차수": tab_info,
                             "이름": name,
                             "학교명": school,
                             "응답 시간": resp_time_str,
@@ -322,6 +342,7 @@ else:
                         })
                     else:
                         result_logs.append({
+                            "차수": tab_info,
                             "이름": name,
                             "학교명": school,
                             "응답 시간": resp_time_str,
@@ -330,6 +351,7 @@ else:
                         })
                 except Exception as e:
                     result_logs.append({
+                        "차수": tab_info,
                         "이름": name,
                         "학교명": school,
                         "응답 시간": resp_time_str,
@@ -338,7 +360,7 @@ else:
                     })
 
                 current_elapsed = time.time() - start_time
-                save_checkpoint(idx + 1, shuffled_data, delays, result_logs, success_count, event_code, current_elapsed)
+                save_checkpoint(idx + 1, shuffled_data, delays, result_logs, success_count, event_code_main, current_elapsed)
                 progress_bar.progress((idx + 1) / total_count)
 
             clear_checkpoint()
@@ -348,6 +370,3 @@ else:
             st.subheader(":material/grading: 작업 상세 결과")
             result_df = pd.DataFrame(result_logs)
             st.dataframe(result_df, hide_index=True, use_container_width=True)
-
-    except Exception as e:
-        st.error(f"구글 시트를 읽어오는 중 오류가 발생했습니다: {e}", icon=":material/error:")
