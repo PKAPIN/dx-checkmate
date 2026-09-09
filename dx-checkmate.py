@@ -66,7 +66,7 @@ def generate_decay_delays(num_people, mode):
 
     timestamps = []
 
-    # [전반부] 다수 기기의 동시 접속 폭주 구간 (소수점 밀리초 난수)
+    # [전반부] 다수 기기의 동시 접속 폭주 구간 (소수점 밀리초 단위 생성)
     for _ in range(count_peak):
         timestamps.append(random.uniform(0, t1))
 
@@ -78,7 +78,7 @@ def generate_decay_delays(num_people, mode):
     for _ in range(count_tail):
         timestamps.append(random.uniform(t2, total_duration))
 
-    # 타임스탬프 정렬 및 간격 계산
+    # 타임스탬프 정렬 및 개별 간격 계산
     timestamps.sort()
     delays = []
     prev_t = 0
@@ -156,7 +156,7 @@ try:
         for idx, (_, row) in enumerate(shuffled_df.iterrows()):
             wait_time = delays[idx]
             
-            # 동시 제출(0.1초 미만)은 UI 지연 없이 즉시 연속 발송
+            # 동시 제출(0.1초 미만)은 UI 지연 없이 즉시 연속 발송하여 실제 현장 폭주 완벽 재현
             if wait_time >= 0.1:
                 step = 0.1
                 for elapsed in range(int(wait_time / step)):
