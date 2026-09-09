@@ -1,0 +1,2 @@
+APP_TITLE = "출석체크_2"
+CURRENT_GID = "1005009417"
