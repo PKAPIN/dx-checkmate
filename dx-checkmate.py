@@ -3,34 +3,23 @@ import pandas as pd
 import time
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
-from webdriver_manager.core.os_manager import ChromeType
 
 st.set_page_config(page_title="DX-CheckMate", page_icon="✅")
 
 st.title("✅ DX-CheckMate 자동 출석 시스템")
 st.caption("구글 시트에서 다운로드한 '출석체크.xlsx' 파일을 업로드해 주세요.")
 
-# Streamlit Cloud 전용 Headless 크롬 드라이버 설정
 def get_driver():
     options = Options()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    
-    try:
-        # Streamlit Cloud 환경 (packages.txt로 설치된 chromium 사용)
-        service = Service("/usr/bin/chromedriver")
-        return webdriver.Chrome(service=service, options=options)
-    except:
-        # 로컬 테스트 환경
-        service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install())
-        return webdriver.Chrome(service=service, options=options)
+    options.add_argument("--window-size=1920,1080")
+    return webdriver.Chrome(options=options)
 
 uploaded_file = st.file_uploader("엑셀 파일(.xlsx) 선택", type=["xlsx"])
 
@@ -45,11 +34,12 @@ if uploaded_file is not None:
         df = pd.read_excel(uploaded_file, header=2)
         
         st.success(f"🔗 타겟 출석 URL 인식 완료: {form_url}")
-        st.dataframe(df.head(5)) # 상위 5건 데이터 미리보기
+        st.dataframe(df.head(5))
 
         if st.button("🚀 자동 출석체크 시작하기"):
-            driver = get_driver()
-            wait = WebDriverWait(driver, 10)
+            with st.spinner("자동화 브라우저를 구동하는 중입니다..."):
+                driver = get_driver()
+                wait = WebDriverWait(driver, 10)
             
             progress_bar = st.progress(0)
             log_area = st.empty()
