@@ -44,40 +44,38 @@ def generate_decay_delays(num_people, mode):
     if num_people == 0:
         return []
 
-    # 모드별 총 소요 시간 범위 지정 (초 단위)
-    if "2분 초밀집" in mode:
-        total_duration = random.uniform(90, 120)       # 1.5분 ~ 2분
-    elif "4분 현장 표준" in mode:
-        total_duration = random.uniform(180, 240)     # 3분 ~ 4분
-    elif "6분 완만 분산" in mode:
-        total_duration = random.uniform(300, 360)     # 5분 ~ 6분
-    else:  # 고속 즉시 모드
-        total_duration = random.uniform(15, 40)       # 1분 이내 완료
+    if "1초 이내" in mode:
+        return [0] * num_people
 
-    # 1. 구간별 인원 비율 배분 (60% ➔ 30% ➔ 10%)
+    if "1분 이내" in mode:
+        total_duration = random.uniform(30, 50)
+    elif "2분 초밀집" in mode:
+        total_duration = random.uniform(90, 120)
+    elif "4분 현장 표준" in mode:
+        total_duration = random.uniform(180, 240)
+    elif "6분 완만 분산" in mode:
+        total_duration = random.uniform(300, 360)
+    else:
+        return [0] * num_people
+
     count_peak = int(num_people * 0.60)
     count_mid = int(num_people * 0.30)
     count_tail = num_people - count_peak - count_mid
 
-    # 2. 총 소요 시간 대비 구간 시점 자동 계산
-    t1 = total_duration * 0.40  # 전반부 40% 시간
-    t2 = total_duration * 0.80  # 중반부 80% 시간
+    t1 = total_duration * 0.40
+    t2 = total_duration * 0.80
 
     timestamps = []
 
-    # [전반부] 60% 몰림 구간
     for _ in range(count_peak):
         timestamps.append(random.uniform(0, t1))
 
-    # [중반부] 30% 감쇄 구간
     for _ in range(count_mid):
         timestamps.append(random.uniform(t1, t2))
 
-    # [후반부] 10% 마무리 구간
     for _ in range(count_tail):
         timestamps.append(random.uniform(t2, total_duration))
 
-    # 3. 시간순 정렬 및 대기 간격 계산
     timestamps.sort()
     delays = []
     prev_t = 0
@@ -114,23 +112,27 @@ try:
     exec_mode = st.radio(
         "연수 인원 및 현장 상황에 맞는 모드를 선택하세요.",
         [
-            "⚡ [2분 초밀집 모드] (소규모 10~20명 / 짧은 쉬는 시간용)",
-            "🕵️ [4분 현장 표준 모드] (중규모 30~50명 / 표준 현장 패턴)",
-            "🐢 [6분 완만 분산 모드] (대규모 60명 이상 / 여유로운 분산 제출)",
-            "🚀 [고속 즉시 모드] (1분 이내 완료 / 시스템 테스트용)"
+            "⚡ [1분 이내 초고속 모드] (1분 이내 완료 / 긴급 출석 처리용)",
+            "🔥 [2분 초밀집 모드] (0~2분 완료 / 소규모 10~20명용)",
+            "🕵️ [4분 현장 표준 모드] (2~4분 완료 / 중규모 30~50명용)",
+            "🐢 [6분 완만 분산 모드] (4~6분 완료 / 대규모 60명 이상용)",
+            "🚀 [고속 즉시 모드] (1초 이내 완료 / 시스템 테스트용)"
         ],
-        index=1
+        index=2
     )
 
-    # 사용자 이해를 돕는 시각적 가이드 카드
-    with st.expander("ℹ️ 가변 구간 타임패턴 시스템(Dynamic Time-Band System) 작동 방식 안내"):
+    # 💡 위계 구조(층위)를 대분류/소분류로 명확히 정돈한 가이드 카드
+    with st.expander("ℹ️ 자동 출석 시스템 세부 작동 원리 안내"):
         st.markdown("""
-        이 시스템은 기계적인 일괄 제출을 방지하기 위해 **사람들이 쉬는 시간에 한꺼번에 몰렸다 줄어드는 실제 현장 행동 패턴**을 수학적으로 재현합니다.
+        이 시스템은 자동화 프로그램으로 감지되지 않도록 **사람들의 실제 출석 행동 패턴**을 수학적으로 재현합니다.
 
-        * **전반부 (초기 몰림 60%)**: 출석 안내 직후 연수자가 한꺼번에 몰리는 현상 재현
-        * **중반부 (완만 감쇄 30%)**: 늦게 확인한 연수자들이 드문드문 들어오는 현상 재현
-        * **후반부 (잔여 마무리 10%)**: 마감 직전 마지막 인원이 제출하는 현상 재현
-        * **순서 무작위 셔플**: 구글 시트 명단 순서와 관계없이 완전히 뒤섞여 전송됩니다.
+        **1. 명단 순서 무작위 섞기 (랜덤 셔플)**
+        * 구글 시트 1번 줄부터 순서대로 제출하면 매크로로 의심받을 수 있어, 제비뽑기처럼 명단 순서를 무작위로 뒤섞어서 전송합니다.
+
+        **2. 시간대별 자연스러운 분산 제출 (60% ➔ 30% ➔ 10%)**
+        * **전반부 (초기 몰림 60%)**: 출석 안내 직후 연수자들이 한꺼번에 제출하는 현상 재현
+        * **중반부 (완만 감쇄 30%)**: 뒤늦게 안내를 확인한 연수자들이 드문드문 제출하는 현상 재현
+        * **후반부 (잔여 마무리 10%)**: 마감 직전 마지막 남은 인원이 제출하는 현상 재현
         """)
 
     if st.button("자동 출석체크 시작하기", type="primary"):
