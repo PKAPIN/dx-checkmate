@@ -1,4 +1,0 @@
-streamlit
-pandas
-openpyxl
-selenium>=4.15.0
