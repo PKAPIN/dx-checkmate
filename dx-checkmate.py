@@ -56,7 +56,6 @@ def generate_decay_delays(num_people, mode):
     else:
         return [0] * num_people
 
-    # 구간별 인원 비율 배분 (초기 몰림 60% ➔ 감쇄 30% ➔ 마무리 10%)
     count_peak = int(num_people * 0.60)
     count_mid = int(num_people * 0.30)
     count_tail = num_people - count_peak - count_mid
@@ -66,19 +65,15 @@ def generate_decay_delays(num_people, mode):
 
     timestamps = []
 
-    # [전반부] 다수 기기의 동시 접속 폭주 구간 (소수점 밀리초 단위 생성)
     for _ in range(count_peak):
         timestamps.append(random.uniform(0, t1))
 
-    # [중반부] 간헐적 접속 구간
     for _ in range(count_mid):
         timestamps.append(random.uniform(t1, t2))
 
-    # [후반부] 잔여 인원 개별 접속 구간
     for _ in range(count_tail):
         timestamps.append(random.uniform(t2, total_duration))
 
-    # 타임스탬프 정렬 및 개별 간격 계산
     timestamps.sort()
     delays = []
     prev_t = 0
@@ -145,6 +140,8 @@ try:
 
         shuffled_df = target_df.sample(frac=1).reset_index(drop=True)
         delays = generate_decay_delays(total_count, exec_mode)
+        
+        total_delay_sum = sum(delays)
 
         session = requests.Session()
         session.headers.update({
@@ -153,17 +150,12 @@ try:
             "Origin": "https://dxcheck.kr"
         })
 
+        start_time = time.time()
+
         for idx, (_, row) in enumerate(shuffled_df.iterrows()):
             wait_time = delays[idx]
-            
-            # 동시 제출(0.1초 미만)은 UI 지연 없이 즉시 연속 발송하여 실제 현장 폭주 완벽 재현
-            if wait_time >= 0.1:
-                step = 0.1
-                for elapsed in range(int(wait_time / step)):
-                    remaining = round(wait_time - (elapsed * step), 1)
-                    log_area.text(f"⏳ [{idx+1}/{total_count}명] 무작위 현장 패턴 대기 중... (다음 전송까지 {remaining}초)")
-                    time.sleep(step)
 
+            # 1. 대상자 정보 먼저 파싱
             name = str(row.get('이름', '')).strip()
             school = str(row.get('학교명', '')).strip()
             phone_last4 = str(row.get('전화번호 뒤 4자리', '')).strip().replace('.0', '')
@@ -171,6 +163,7 @@ try:
             lunch_str = str(row.get('점심식사 참석여부', '')).strip().upper()
             dinner_str = str(row.get('저녁식사 참석여부', '')).strip().upper()
 
+            # 2. 필수 데이터 누락 예외 처리
             if not school or school.lower() == 'nan':
                 result_logs.append({
                     "이름": name if name else f"{idx+1}번 행",
@@ -191,8 +184,20 @@ try:
                 progress_bar.progress((idx + 1) / total_count)
                 continue
 
-            log_area.text(f"[{idx+1}/{total_count}] ({school}) {name} 선생님 출석 처리 중...")
+            # 3. 무작위 대기 시간 동안 해당 선생님 이름과 전체 예상 남은 시간 표시
+            if wait_time >= 0.1:
+                step = 0.1
+                for elapsed in range(int(wait_time / step)):
+                    elapsed_total = time.time() - start_time
+                    remaining_total = max(0, round(total_delay_sum - elapsed_total, 1))
+                    log_area.text(f"⏳ [{idx+1}/{total_count}] ({school}) {name} 선생님 입력 중... (예상 작업 시간 {remaining_total}초 남음)")
+                    time.sleep(step)
+            else:
+                elapsed_total = time.time() - start_time
+                remaining_total = max(0, round(total_delay_sum - elapsed_total, 1))
+                log_area.text(f"⏳ [{idx+1}/{total_count}] ({school}) {name} 선생님 입력 중... (예상 작업 시간 {remaining_total}초 남음)")
 
+            # 4. API 호출
             payload = {
                 "code": event_code,
                 "name": name,
