@@ -9,7 +9,6 @@ import uuid
 
 st.set_page_config(page_title="DX-CheckMate 자동 출석", page_icon=":material/fact_check:", layout="wide")
 
-# 세션 상태 초기화 (작업 실행 중 여부, 선택 시트, 완료 결과 저장)
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())[:8]
 if "is_running" not in st.session_state:
@@ -47,7 +46,7 @@ with col_guide:
     **💡 사용 방법 가이드**
     1. 각 학교의 **개별 시트('연수자 명단' 탭)**에 기입된 정보를 복사합니다.
     2. **[출석체크 구글 시트]** 버튼을 눌러, 대상자 데이터를 붙여넣기(입력) 합니다.
-    3. 이번에 출석을 진행할 **실시간 출석 URL 주소**를 시트 2행에 붙여넣습니다.
+    3. 이번에 출석을 진행할 **실시간 출석 URL 주소**를 시트 4행에 붙여넣습니다.
     4. 이번에 출석을 진행할 인원들의 **'출석하기'** 열 체크박스를 선택합니다.
     5. 본 탭(웹)으로 돌아와 진행할 시트 선택 및 실행모드 선택 후 **[자동 출석체크 시작하기]** 버튼을 클릭합니다.
     6. 제출이 완료되면 **[CMS 프로그램 출결관리]**에서 최종 결과를 확인합니다.
@@ -55,7 +54,6 @@ with col_guide:
 
 st.divider()
 
-# 시트 선택 상자 제어 (작업 진행 중일 때만 잠금/숨김)
 if not st.session_state.is_running:
     selected_tab_name = st.radio(
         "📌 진행할 출석 시트 탭을 선택하세요",
@@ -75,7 +73,7 @@ def generate_decay_delays(num_people, mode):
     if num_people == 0:
         return []
 
-    if "1초 이내" in mode:
+    if "1초 이내" in mode or "고속 즉시" in mode:
         return [0] * num_people
 
     if "1분 이내" in mode:
@@ -142,24 +140,44 @@ def clear_checkpoint():
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={current_gid}"
 
 try:
-    df_raw = pd.read_csv(CSV_URL, header=None)
+    # 📌 문자열(str)로 읽어 전화번호 앞자리 0 누락 방지
+    df_raw = pd.read_csv(CSV_URL, header=None, dtype=str)
+    
+    # 📌 B2 셀(Row 2, Column B)에서 기본 학교명 추출
+    default_school = ""
+    if len(df_raw) > 1 and pd.notna(df_raw.iloc[1, 1]):
+        default_school = str(df_raw.iloc[1, 1]).strip()
+
+    # 📌 4행(Row 4, index 3)에서 실시간 출석 URL 추출
     form_url = ""
-    for cell in df_raw.iloc[1].dropna():
-        cell_str = str(cell).strip()
-        if cell_str.startswith("http"):
-            form_url = cell_str
-            break
+    if len(df_raw) > 3:
+        for cell in df_raw.iloc[3].dropna():
+            cell_str = str(cell).strip()
+            if cell_str.startswith("http"):
+                form_url = cell_str
+                break
             
     event_code = form_url.rstrip('/').split('/')[-1] if form_url else ""
-    df = pd.read_csv(CSV_URL, header=2)
     
+    # 📌 5행(header=4)이 테이블 헤더, 6행부터 실제 연수자 데이터
+    df = pd.read_csv(CSV_URL, header=4, dtype=str)
+    
+    # 📌 식사 참석 헤더 (F5) 토글 감지 (점심식사 vs 저녁식사)
+    meal_col = [col for col in df.columns if '식사' in str(col)]
+    meal_header_name = meal_col[0] if meal_col else '점심식사'
+    is_lunch_mode = '점심' in meal_header_name
+
     st.success(f"[{selected_tab_name}] 실시간 출석 URL 인식 완료: {form_url}", icon=":material/link:")
     
-    target_df = df[df['출석하기'].astype(str).str.upper().isin(['TRUE', 'O', 'V', '1'])]
+    target_df = df[df['출석하기'].astype(str).str.upper().isin(['TRUE', 'O', 'V', '1'])].copy()
+    
+    # 전화번호 4자리 보정 시각화
+    target_df['전화번호 뒤 4자리'] = target_df['전화번호 뒤 4자리'].astype(str).str.replace('.0', '', regex=False).str.strip().str.zfill(4)
+    target_df['학교명'] = target_df['학교명'].apply(lambda x: default_school if pd.isna(x) or str(x).strip() in ['', 'nan', 'None'] else str(x).strip())
     
     st.write(f":material/list_alt: [{selected_tab_name}] 현재 출석체크 대상자: **총 {len(target_df)}명**")
     
-    preview_cols = ['이름', '학교명', '전화번호 뒤 4자리', '구분(교/직원)', '점심식사 참석여부', '저녁식사 참석여부']
+    preview_cols = ['이름', '학교명', '전화번호 뒤 4자리', '구분(교/직원)', meal_header_name]
     st.dataframe(target_df[[col for col in preview_cols if col in target_df.columns]], use_container_width=True)
 
     st.subheader(":material/tune: 출석 패턴 모드 선택")
@@ -167,11 +185,11 @@ try:
     exec_mode = st.radio(
         "연수 인원 및 현장 상황에 맞는 모드를 선택하세요.",
         [
-            "⚡ [1분 이내 초고속 모드] (1분 이내 완료 / 긴급 출석 처리용)",
-            "🔥 [2분 초밀집 모드] (0 - 2분 완료 / 소규모 10 - 20명용)",
-            "🕵️ [4분 현장 표준 모드] (2 - 4분 완료 / 중규모 30 - 50명용)",
-            "🐢 [6분 완만 분산 모드] (4 - 6분 완료 / 대규모 60명 이상용)",
-            "🚀 [고속 즉시 모드] (1초 이내 완료 / 시스템 테스트용)"
+            ":material/bolt: [1분 이내 초고속 모드] (1분 이내 완료 / 긴급 출석 처리용)",
+            ":material/local_fire_department: [2분 초밀집 모드] (0 - 2분 완료 / 소규모 10 - 20명용)",
+            ":material/verified_user: [4분 현장 표준 모드] (2 - 4분 완료 / 중규모 30 - 50명용)",
+            ":material/schedule: [6분 완만 분산 모드] (4 - 6분 완료 / 대규모 60명 이상용)",
+            ":material/rocket_launch: [고속 즉시 모드] (1초 이내 완료 / 시스템 테스트용)"
         ],
         index=2,
         disabled=st.session_state.is_running
@@ -217,7 +235,6 @@ try:
         st.session_state.completed_results = None
         st.rerun()
 
-    # 실시간 처리 구역
     if st.session_state.is_running:
         progress_bar = st.progress(0)
         log_area = st.empty()
@@ -259,11 +276,24 @@ try:
                 wait_time = delays[idx]
 
                 name = str(row.get('이름', '')).strip()
+                
+                # 학교명 비어있으면 B2 기본 학교명 사용
                 school = str(row.get('학교명', '')).strip()
-                phone_last4 = str(row.get('전화번호 뒤 4자리', '')).strip().replace('.0', '')
+                if not school or school.lower() in ['nan', 'none', '']:
+                    school = default_school
+
+                # 📌 전화번호 앞자리 0 누락 방지 (zfill 4자리 고정)
+                phone_raw = str(row.get('전화번호 뒤 4자리', '')).strip().replace('.0', '')
+                phone_last4 = phone_raw.zfill(4) if phone_raw.isdigit() else phone_raw
+
                 role = str(row.get('구분(교/직원)', '')).strip()
-                lunch_str = str(row.get('점심식사 참석여부', '')).strip().upper()
-                dinner_str = str(row.get('저녁식사 참석여부', '')).strip().upper()
+                
+                # 📌 식사 참석 토글 판별
+                meal_status = str(row.get(meal_header_name, '')).strip().upper()
+                is_attending = meal_status in ['참석', 'O', '1', 'TRUE', 'V']
+                
+                is_lunch = 1 if (is_lunch_mode and is_attending) else 0
+                is_dinner = 1 if ((not is_lunch_mode) and is_attending) else 0
 
                 def get_formatted_time():
                     sec = int(time.time() - start_time)
@@ -313,8 +343,8 @@ try:
                     "phone": phone_last4,
                     "type": role,
                     "department": school,
-                    "is_lunch": 1 if lunch_str in ['O', '1', 'TRUE', '참석'] else 0,
-                    "is_dinner": 1 if dinner_str in ['O', '1', 'TRUE', '참석'] else 0
+                    "is_lunch": is_lunch,
+                    "is_dinner": is_dinner
                 }
 
                 resp_time_str = get_formatted_time()
@@ -351,7 +381,6 @@ try:
                 save_checkpoint(idx + 1, shuffled_data, delays, result_logs, success_count, event_code, current_elapsed)
                 progress_bar.progress((idx + 1) / total_count)
 
-            # 작업 완료 후 결과 저장 및 잠금 해제(Rerun)
             clear_checkpoint()
             st.session_state.completed_results = {
                 "tab_name": selected_tab_name,
@@ -365,7 +394,6 @@ try:
         except Exception as e:
             st.error(f"작업 진행 중 오류 발생: {e}")
 
-    # 작업 완료 결과 출력 영역
     if not st.session_state.is_running and st.session_state.completed_results:
         res = st.session_state.completed_results
         if res.get("tab_name") == selected_tab_name:
