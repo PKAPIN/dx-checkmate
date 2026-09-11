@@ -140,15 +140,13 @@ def clear_checkpoint():
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={current_gid}"
 
 try:
-    # 📌 문자열(str)로 읽어 전화번호 앞자리 0 누락 방지
     df_raw = pd.read_csv(CSV_URL, header=None, dtype=str)
     
-    # 📌 B2 셀(Row 2, Column B)에서 기본 학교명 추출
     default_school = ""
     if len(df_raw) > 1 and pd.notna(df_raw.iloc[1, 1]):
         default_school = str(df_raw.iloc[1, 1]).strip()
 
-    # 📌 4행(Row 4, index 3)에서 실시간 출석 URL 추출
+    # 구글 시트 4행에서 URL 추출
     form_url = ""
     if len(df_raw) > 3:
         for cell in df_raw.iloc[3].dropna():
@@ -158,20 +156,20 @@ try:
                 break
             
     event_code = form_url.rstrip('/').split('/')[-1] if form_url else ""
-    
-    # 📌 5행(header=4)이 테이블 헤더, 6행부터 실제 연수자 데이터
     df = pd.read_csv(CSV_URL, header=4, dtype=str)
     
-    # 📌 식사 참석 헤더 (F5) 토글 감지 (점심식사 vs 저녁식사)
     meal_col = [col for col in df.columns if '식사' in str(col)]
     meal_header_name = meal_col[0] if meal_col else '점심식사'
     is_lunch_mode = '점심' in meal_header_name
 
-    st.success(f"[{selected_tab_name}] 실시간 출석 URL 인식 완료: {form_url}", icon=":material/link:")
+    # 📌 URL 존재 여부에 따른 메시지 출력 (요청하신 문구 반영)
+    if form_url:
+        st.success(f"[{selected_tab_name}] 실시간 출석 URL 인식 완료: {form_url}", icon=":material/link:")
+    else:
+        st.error("⚠️ URL 주소가 입력되지 않았습니다.", icon=":material/link_off:")
     
     target_df = df[df['출석하기'].astype(str).str.upper().isin(['TRUE', 'O', 'V', '1'])].copy()
     
-    # 전화번호 4자리 보정 시각화
     target_df['전화번호 뒤 4자리'] = target_df['전화번호 뒤 4자리'].astype(str).str.replace('.0', '', regex=False).str.strip().str.zfill(4)
     target_df['학교명'] = target_df['학교명'].apply(lambda x: default_school if pd.isna(x) or str(x).strip() in ['', 'nan', 'None'] else str(x).strip())
     
@@ -210,7 +208,7 @@ try:
 
     saved_cp = load_checkpoint()
     
-    if saved_cp and saved_cp.get("event_code") == event_code:
+    if saved_cp and saved_cp.get("event_code") == event_code and event_code:
         processed_num = saved_cp.get("current_index", 0)
         total_num = len(saved_cp.get("shuffled_data", []))
         st.warning(f"⚠️ [{selected_tab_name}] 이전 작업이 중단된 기록이 있습니다. ({processed_num}/{total_num}명 진행 완료)", icon=":material/warning:")
@@ -228,12 +226,16 @@ try:
             st.rerun()
     else:
         resume_btn = False
-        start_btn = st.button("자동 출석체크 시작하기", type="primary", disabled=st.session_state.is_running)
+        # URL이 없으면 비활성화
+        start_btn = st.button("자동 출석체크 시작하기", type="primary", disabled=st.session_state.is_running or not form_url)
 
     if (not saved_cp and start_btn) or (saved_cp and resume_btn):
-        st.session_state.is_running = True
-        st.session_state.completed_results = None
-        st.rerun()
+        if not form_url:
+            st.error("⚠️ URL 주소가 입력되지 않았습니다.", icon=":material/link_off:")
+        else:
+            st.session_state.is_running = True
+            st.session_state.completed_results = None
+            st.rerun()
 
     if st.session_state.is_running:
         progress_bar = st.progress(0)
@@ -277,18 +279,15 @@ try:
 
                 name = str(row.get('이름', '')).strip()
                 
-                # 학교명 비어있으면 B2 기본 학교명 사용
                 school = str(row.get('학교명', '')).strip()
                 if not school or school.lower() in ['nan', 'none', '']:
                     school = default_school
 
-                # 📌 전화번호 앞자리 0 누락 방지 (zfill 4자리 고정)
                 phone_raw = str(row.get('전화번호 뒤 4자리', '')).strip().replace('.0', '')
                 phone_last4 = phone_raw.zfill(4) if phone_raw.isdigit() else phone_raw
 
                 role = str(row.get('구분(교/직원)', '')).strip()
                 
-                # 📌 식사 참석 토글 판별
                 meal_status = str(row.get(meal_header_name, '')).strip().upper()
                 is_attending = meal_status in ['참석', 'O', '1', 'TRUE', 'V']
                 
