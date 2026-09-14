@@ -23,10 +23,11 @@ SHEET_WEB_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 ADMIN_WEB_URL = "https://cms.dxcheck.kr/admin/event"
 API_URL = "https://api.dxcheck.kr/api/v1/attendance"
 
+# 📌 시트 ID(gid) 갱신 반영
 TAB_CONFIG = {
     "출석체크_1": "1678272994",
-    "출석체크_2": "1005009417",
-    "출석체크_3": "508140271"
+    "출석체크_2": "211467376",
+    "출석체크_3": "971906306"
 }
 
 col_title, col_guide = st.columns([1.5, 1])
@@ -44,12 +45,14 @@ with col_title:
 with col_guide:
     st.info("""
     **💡 사용 방법 가이드**
-    1. 각 학교의 **개별 시트('연수자 명단' 탭)**에 기입된 정보를 복사합니다.
-    2. **[출석체크 구글 시트]** 버튼을 눌러, 대상자 데이터를 붙여넣기(입력) 합니다.
-    3. 이번에 출석을 진행할 **실시간 출석 URL 주소**를 시트 4행에 붙여넣습니다.
-    4. 이번에 출석을 진행할 인원들의 **'출석하기'** 열 체크박스를 선택합니다.
+    1. 학교, 과정명 회차를 선택합니다.
+    2. 5행 식사여부는 상황에 맞춰 **[점심식사]** / **[저녁식사]** 토글로 변경해 줍니다.
+    3. 이번에 출석을 진행할 실시간 출석 URL 주소를 'url 입력'란에 붙여넣습니다.
+    4. 이번에 출석을 진행할 인원들의 '출석하기' 열 체크박스를 선택합니다.
     5. 본 탭(웹)으로 돌아와 진행할 시트 선택 및 실행모드 선택 후 **[자동 출석체크 시작하기]** 버튼을 클릭합니다.
     6. 제출이 완료되면 **[CMS 프로그램 출결관리]**에서 최종 결과를 확인합니다.
+    
+    ⚠️ *(꼭 확인 후 다음 프로세스 진행하십시오) 실제 출석 데이터에 반영됩니다.*
     """)
 
 st.divider()
@@ -162,7 +165,7 @@ try:
     meal_header_name = meal_col[0] if meal_col else '점심식사'
     is_lunch_mode = '점심' in meal_header_name
 
-    # 📌 URL 존재 여부에 따른 메시지 출력 (요청하신 문구 반영)
+    # URL 존재 여부에 따른 메시지 출력
     if form_url:
         st.success(f"[{selected_tab_name}] 실시간 출석 URL 인식 완료: {form_url}", icon=":material/link:")
     else:
@@ -226,7 +229,6 @@ try:
             st.rerun()
     else:
         resume_btn = False
-        # URL이 없으면 비활성화
         start_btn = st.button("자동 출석체크 시작하기", type="primary", disabled=st.session_state.is_running or not form_url)
 
     if (not saved_cp and start_btn) or (saved_cp and resume_btn):
