@@ -19,11 +19,10 @@ if "completed_results" not in st.session_state:
     st.session_state.completed_results = None
 
 SHEET_ID = "1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU"
-SHEET_WEB_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
+SHEET_WEB_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit?gid=1678272994#gid=1678272994"
 ADMIN_WEB_URL = "https://cms.dxcheck.kr/"
 API_URL = "https://api.dxcheck.kr/api/v1/attendance"
 
-# 📌 시트 ID(gid) 갱신 반영
 TAB_CONFIG = {
     "출석체크_1": "1678272994",
     "출석체크_2": "211467376",
@@ -45,7 +44,7 @@ with col_title:
 with col_guide:
     st.info("""
     **💡 사용 방법 가이드**
-    1. **[출석체크 구글 시트 바로가기]** 링크에 접속한 후 학교, 과정명, 회차를 선택합니다.
+    1. **[출석체크 구글 시트 바로가기]** 링크에 접속한 후 작업할 출석시트(1,2,3)를 선택하고 학교, 과정명, 회차를 선택합니다.
     2. 5행 식사여부는 상황에 맞춰 **[점심식사]** / **[저녁식사]** 토글로 변경해 줍니다.
     3. 이번에 출석을 진행할 실시간 출석 URL 주소를 'url 입력'란에 붙여넣습니다.
     4. 이번에 출석을 진행할 인원들의 '출석하기' 열 체크박스를 선택합니다.
@@ -79,6 +78,7 @@ def generate_decay_delays(num_people, mode):
     if "1초 이내" in mode or "고속 즉시" in mode:
         return [0] * num_people
 
+    # 1. 모드별 총 소요시간 산정
     if "1분 이내" in mode:
         total_duration = random.uniform(30, 50)
     elif "2분 초밀집" in mode:
@@ -90,12 +90,18 @@ def generate_decay_delays(num_people, mode):
     else:
         return [0] * num_people
 
-    count_peak = int(num_people * 0.60)
-    count_mid = int(num_people * 0.30)
+    # 2. 비율 완전 무작위 난수화 (초반 45%~75%, 중반 60%~80%, 후반 잔여)
+    peak_ratio = random.uniform(0.45, 0.75)
+    remaining_ratio = 1.0 - peak_ratio
+    mid_ratio = remaining_ratio * random.uniform(0.60, 0.80)
+    
+    count_peak = int(num_people * peak_ratio)
+    count_mid = int(num_people * mid_ratio)
     count_tail = num_people - count_peak - count_mid
 
-    t1 = total_duration * 0.40
-    t2 = total_duration * 0.80
+    # 3. 구간 경계점 무작위 산출
+    t1 = total_duration * random.uniform(0.35, 0.45)
+    t2 = total_duration * random.uniform(0.75, 0.85)
 
     timestamps = []
     for _ in range(count_peak):
@@ -106,10 +112,14 @@ def generate_decay_delays(num_people, mode):
         timestamps.append(random.uniform(t2, total_duration))
 
     timestamps.sort()
+    
+    # 4. 간격 계산 + 휴먼 노이즈(Jitter ±10%) 주입
     delays = []
     prev_t = 0
     for t in timestamps:
-        delays.append(t - prev_t)
+        delay = t - prev_t
+        jitter = random.uniform(0.9, 1.1)
+        delays.append(max(0.05, delay * jitter))
         prev_t = t
 
     return delays
@@ -196,6 +206,7 @@ try:
         disabled=st.session_state.is_running
     )
 
+    # 📌 안내 문구 완전 최신화 적용
     with st.expander("ℹ️ 자동 출석 시스템 세부 작동 원리 안내"):
         st.markdown("""
         이 시스템은 자동화 프로그램으로 감지되지 않도록 **사람들의 실제 출석 행동 패턴**을 수학적으로 재현합니다.
@@ -203,10 +214,11 @@ try:
         **1. 명단 순서 무작위 섞기 (랜덤 셔플)**
         * 구글 시트 1번 줄부터 순서대로 제출하면 매크로로 의심받을 수 있어, 제비뽑기처럼 명단 순서를 무작위로 뒤섞어서 전송합니다.
 
-        **2. 시간대별 자연스러운 분산 제출 (60% ➔ 30% ➔ 10%)**
-        * **전반부 (초기 몰림 60%)**: 현장 안내 직후 다수의 연수 기기(스마트폰)에서 동시다발적으로 무작위 폭주 제출하는 현상 재현
-        * **중반부 (완만 감쇄 30%)**: 뒤늦게 안내를 확인한 연수자들이 드문드문 제출하는 현상 재현
-        * **후반부 (잔여 마무리 10%)**: 마감 직전 마지막 남은 인원이 제출하는 현상 재현
+        **2. 실행 시마다 무작위 변경되는 동적 난수 비율 (Dynamic Ratio)**
+        * 초반 몰림(45%~75%), 중반, 후반의 인원 분산 비율이 실행마다 완전히 다르게 계산되어 정형화된 제출 패턴 조사를 무력화합니다.
+
+        **3. 구간 경계점 난수화 및 휴먼 노이즈(Jitter) 주입**
+        * 시간대별 전환 구간($t_1, t_2$) 역시 매번 달라지며, 제출 간격마다 ±10%의 미세 생체 오차(Jitter)를 적용해 기계적인 일정함을 완전히 배제합니다.
         """)
 
     saved_cp = load_checkpoint()
