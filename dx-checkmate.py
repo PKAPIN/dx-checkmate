@@ -75,36 +75,45 @@ def generate_decay_delays(num_people, mode):
     if num_people == 0:
         return []
 
-    # 1초 이내 / 고속 즉시 모드: 순차 대기 없이 100% 동시 즉시 전송
+    # 고속 즉시 모드: 100% 동시 즉시 전송
     if "1초 이내" in mode or "고속 즉시" in mode:
         return [0] * num_people
 
-    # QR 표출 시 전체 접수 소요 시간 (초)
+    # 1. 실행할 때마다 총 소요시간 완전 난수화
     if "1분 이내" in mode:
-        total_duration = random.uniform(20, 40)
+        total_duration = random.uniform(30, 50)
     elif "2분 초밀집" in mode:
-        total_duration = random.uniform(60, 90)
+        total_duration = random.uniform(90, 120)
     elif "4분 현장 표준" in mode:
-        total_duration = random.uniform(120, 180)
+        total_duration = random.uniform(180, 240)  # 3분~4분(180~240초) 사이 난수화
     elif "6분 완만 분산" in mode:
-        total_duration = random.uniform(200, 300)
+        total_duration = random.uniform(300, 360)  # 5분~6분(300~360초) 사이 난수화
     else:
         return [0] * num_people
 
-    # 현장 QR 열림 직후 동시 몰림 비중 난수화 (50%~75%)
-    peak_ratio = random.uniform(0.50, 0.75)
+    # 2. S-Curve 3단계 인원 비중 무작위 산출
+    # Phase 1: 점화(얼리액세서)약 5%, Phase 2: 주 폭주 60~70%, Phase 3: 잔여
+    early_ratio = random.uniform(0.04, 0.08)
+    peak_ratio = random.uniform(0.60, 0.70)
+    
+    count_early = max(1, int(num_people * early_ratio))
     count_peak = int(num_people * peak_ratio)
-    count_tail = num_people - count_peak
+    count_tail = num_people - count_early - count_peak
 
-    # 초기 동시 폭주 시간대 (전체 시간의 초반 15%~25% 지점)
-    t_peak = total_duration * random.uniform(0.15, 0.25)
+    # 3. 인간 인지 지연(Cognitive Delay) 반영 시간 구간 설정
+    t_early = total_duration * random.uniform(0.05, 0.10)  # 초기 반응 시간 지연
+    t_peak = total_duration * random.uniform(0.25, 0.35)   # 주 폭주 마감 시간
 
     timestamps = []
-    # 1) 현장 동시 접수군 (QR 띄우자마자 동시다발적으로 밀려들어오는 인원)
-    for _ in range(count_peak):
-        timestamps.append(random.uniform(0, t_peak))
+    # Phase 1: 인지/접속 지연 단계 (1~2명 극소수 진입)
+    for _ in range(count_early):
+        timestamps.append(random.uniform(0, t_early))
         
-    # 2) 잔여 접수군 (지각 접속 또는 뒤늦게 QR 찍는 인원)
+    # Phase 2: 주 폭주 단계 (QR 인식 후 대규모 유입)
+    for _ in range(count_peak):
+        timestamps.append(random.uniform(t_early, t_peak))
+
+    # Phase 3: 잔여 접수 단계 (지각 접속 및 완만 분산)
     for _ in range(count_tail):
         timestamps.append(random.uniform(t_peak, total_duration))
 
@@ -201,19 +210,19 @@ try:
         disabled=st.session_state.is_running
     )
 
-    # 📌 전문적 기술 명세 구조로 교정된 세부 작동 원리 안내
+    # 📌 4분/6분 현장 표준 기준 기술 명세 복구 반영
     with st.expander("ℹ️ 자동 출석 시스템 세부 작동 원리 (Security & Pattern Obfuscation)"):
         st.markdown("""
-        본 시스템은 백엔드 서버의 매크로 및 어뷰징 탐지 알고리즘(Anti-Bot Detection)을 무력화하기 위해, **현장 QR 오프라인 출석 시 발생하는 동시 다발적 접속 행동(Burst Traffic)**을 수학적 난수 알고리즘으로 재현합니다.
+        본 시스템은 백엔드 서버의 매크로 및 어뷰징 탐지 알고리즘(Anti-Bot Detection)을 무력화하기 위해, **현장 QR 오프라인 출석 시 발생하는 생체 인지 반응 및 동시 다발적 접속 행동(S-Curve Burst Traffic)**을 수학적 난수 알고리즘으로 재현합니다.
 
         **1. 명단 순서 비선형 무작위화 (Non-linear Random Shuffling)**
         * 정적 스프레드시트의 인덱스 순서대로 데이터를 순차 전송할 경우 자동화 스크립트로 즉시 식별됩니다. 이를 방지하기 위해 제출 대상자의 순서를 제비뽑기 알고리즘으로 비선형 무작위 셔플링하여 수신 서버에 전송합니다.
 
-        **2. 동시 다발 트래픽 피크 재현 (Simultaneous Traffic Spike)**
-        * 현장 화면에 QR 코드가 투사되는 직후 수십 명의 사용자가 동시에 기기로 접속하는 실제 오프라인 집계 패턴을 모사합니다. 전체 인원의 **50%~75%를 초반 수 초 이내에 밀집 전송**하여 자연스러운 현장 폭주 트래픽을 형성합니다.
+        **2. 인간 인지 반응 지연 및 동시 피크 모사 (Cognitive Delay & S-Curve Spike)**
+        * QR 코드 투사 즉시 접속하는 기계적 0초 제출을 배제하고, **초기 탐색 지연(Phase 1: 5%) ➔ 주 폭주 피크(Phase 2: 65%) ➔ 잔여 분산(Phase 3: 30%)**의 3단계 오프라인 S곡선 트래픽 곡선을 생성합니다.
 
-        **3. 동적 난수화 기반 패턴 교란 (Dynamic Threshold & Noise Injection)**
-        * 고정된 제출 주기나 비율을 유지할 경우 정적 패턴 분석에 노출될 위험이 있습니다. 이에 따라 **초기 트래픽 비중(50%~75%)과 시간대별 전환 시점(Time Threshold)을 매 실행마다 난수로 재계산**하여 가변적 패턴을 생성합니다.
+        **3. 전체 사이클 및 분기점 난수화 (Dynamic Total Duration & Threshold)**
+        * 모드별 **전체 소요 시간(Total Duration)**을 매 실행마다 무작위 산출하고, 구간별 시간 분기점($t_{early}, t_{peak}$) 및 비중을 난수로 재계산하여 정적 매크로 패턴 분석을 완전히 무력화합니다.
         """)
 
     saved_cp = load_checkpoint()
