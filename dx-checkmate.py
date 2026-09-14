@@ -20,7 +20,7 @@ if "completed_results" not in st.session_state:
 
 SHEET_ID = "1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU"
 SHEET_WEB_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
-ADMIN_WEB_URL = "https://cms.dxcheck.kr/admin/event"
+ADMIN_WEB_URL = "https://cms.dxcheck.kr/"
 API_URL = "https://api.dxcheck.kr/api/v1/attendance"
 
 # 📌 시트 ID(gid) 갱신 반영
@@ -45,7 +45,7 @@ with col_title:
 with col_guide:
     st.info("""
     **💡 사용 방법 가이드**
-    1. 학교, 과정명 회차를 선택합니다.
+    1. **[출석체크 구글 시트 바로가기]** 링크에 접속한 후 학교, 과정명, 회차를 선택합니다.
     2. 5행 식사여부는 상황에 맞춰 **[점심식사]** / **[저녁식사]** 토글로 변경해 줍니다.
     3. 이번에 출석을 진행할 실시간 출석 URL 주소를 'url 입력'란에 붙여넣습니다.
     4. 이번에 출석을 진행할 인원들의 '출석하기' 열 체크박스를 선택합니다.
@@ -149,12 +149,12 @@ try:
     if len(df_raw) > 1 and pd.notna(df_raw.iloc[1, 1]):
         default_school = str(df_raw.iloc[1, 1]).strip()
 
-    # 구글 시트 4행에서 URL 추출
+    # 구글 시트 4행에서 '진짜 출석 URL'만 추출 (docs.google.com 구글 시트 링크 제외)
     form_url = ""
     if len(df_raw) > 3:
         for cell in df_raw.iloc[3].dropna():
             cell_str = str(cell).strip()
-            if cell_str.startswith("http"):
+            if cell_str.startswith("http") and "docs.google.com" not in cell_str:
                 form_url = cell_str
                 break
             
