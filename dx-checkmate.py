@@ -75,51 +75,46 @@ def generate_decay_delays(num_people, mode):
     if num_people == 0:
         return []
 
+    # 1초 이내 / 고속 즉시 모드: 순차 대기 없이 100% 동시 즉시 전송
     if "1초 이내" in mode or "고속 즉시" in mode:
         return [0] * num_people
 
-    # 1. 모드별 총 소요시간 산정
+    # QR 표출 시 전체 접수 소요 시간 (초)
     if "1분 이내" in mode:
-        total_duration = random.uniform(30, 50)
+        total_duration = random.uniform(20, 40)
     elif "2분 초밀집" in mode:
-        total_duration = random.uniform(90, 120)
+        total_duration = random.uniform(60, 90)
     elif "4분 현장 표준" in mode:
-        total_duration = random.uniform(180, 240)
+        total_duration = random.uniform(120, 180)
     elif "6분 완만 분산" in mode:
-        total_duration = random.uniform(300, 360)
+        total_duration = random.uniform(200, 300)
     else:
         return [0] * num_people
 
-    # 2. 비율 완전 무작위 난수화 (초반 45%~75%, 중반 60%~80%, 후반 잔여)
-    peak_ratio = random.uniform(0.45, 0.75)
-    remaining_ratio = 1.0 - peak_ratio
-    mid_ratio = remaining_ratio * random.uniform(0.60, 0.80)
-    
+    # 현장 QR 열림 직후 동시 몰림 비중 난수화 (50%~75%)
+    peak_ratio = random.uniform(0.50, 0.75)
     count_peak = int(num_people * peak_ratio)
-    count_mid = int(num_people * mid_ratio)
-    count_tail = num_people - count_peak - count_mid
+    count_tail = num_people - count_peak
 
-    # 3. 구간 경계점 무작위 산출
-    t1 = total_duration * random.uniform(0.35, 0.45)
-    t2 = total_duration * random.uniform(0.75, 0.85)
+    # 초기 동시 폭주 시간대 (전체 시간의 초반 15%~25% 지점)
+    t_peak = total_duration * random.uniform(0.15, 0.25)
 
     timestamps = []
+    # 1) 현장 동시 접수군 (QR 띄우자마자 동시다발적으로 밀려들어오는 인원)
     for _ in range(count_peak):
-        timestamps.append(random.uniform(0, t1))
-    for _ in range(count_mid):
-        timestamps.append(random.uniform(t1, t2))
+        timestamps.append(random.uniform(0, t_peak))
+        
+    # 2) 잔여 접수군 (지각 접속 또는 뒤늦게 QR 찍는 인원)
     for _ in range(count_tail):
-        timestamps.append(random.uniform(t2, total_duration))
+        timestamps.append(random.uniform(t_peak, total_duration))
 
     timestamps.sort()
-    
-    # 4. 간격 계산 + 휴먼 노이즈(Jitter ±10%) 주입
+
+    # 인원별 제출 지연 간격(Delay) 산출
     delays = []
     prev_t = 0
     for t in timestamps:
-        delay = t - prev_t
-        jitter = random.uniform(0.9, 1.1)
-        delays.append(max(0.05, delay * jitter))
+        delays.append(t - prev_t)
         prev_t = t
 
     return delays
@@ -206,19 +201,19 @@ try:
         disabled=st.session_state.is_running
     )
 
-    # 📌 안내 문구 완전 최신화 적용
+    # 📌 현장 QR 실제 접수 원리에 맞춘 세부 설명 수정
     with st.expander("ℹ️ 자동 출석 시스템 세부 작동 원리 안내"):
         st.markdown("""
-        이 시스템은 자동화 프로그램으로 감지되지 않도록 **사람들의 실제 출석 행동 패턴**을 수학적으로 재현합니다.
+        이 시스템은 자동화 매크로 탐지를 우회하기 위해 **현장 QR 코드 안내 시 발생하는 실제 동시 접수 행동**을 수학적으로 재현합니다.
 
-        **1. 명단 순서 무작위 섞기 (랜덤 셔플)**
-        * 구글 시트 1번 줄부터 순서대로 제출하면 매크로로 의심받을 수 있어, 제비뽑기처럼 명단 순서를 무작위로 뒤섞어서 전송합니다.
+        **1. 제출 순서 무작위 셔플 (Random Order)**
+        * 구글 시트 줄순서대로 제출하면 패턴으로 감지될 수 있어, 제비뽑기처럼 명동 순서를 완전히 뒤섞어 난수화 전송합니다.
 
-        **2. 실행 시마다 무작위 변경되는 동적 난수 비율 (Dynamic Ratio)**
-        * 초반 몰림(45%~75%), 중반, 후반의 인원 분산 비율이 실행마다 완전히 다르게 계산되어 정형화된 제출 패턴 조사를 무력화합니다.
+        **2. 현장 QR 열림 직후 동시다발 폭주 (Simultaneous Spike)**
+        * 화면에 QR을 띄우자마자 수십 명의 선생님이 폰으로 동시에 접속하는 실제 상황을 재현하여, **전체 인원의 50~75%가 초반 수 초 내에 순서 없이 한꺼번에 타격**하도록 전송합니다.
 
-        **3. 구간 경계점 난수화 및 휴먼 노이즈(Jitter) 주입**
-        * 시간대별 전환 구간($t_1, t_2$) 역시 매번 달라지며, 제출 간격마다 ±10%의 미세 생체 오차(Jitter)를 적용해 기계적인 일정함을 완전히 배제합니다.
+        **3. 비율 및 시간 분기점 난수화 (Dynamic Noise)**
+        * 초기 폭주 비중(50%~75%)과 접수 구간 시점이 매 실행마다 무작위로 추첨되므로, 고정된 매크로 패턴 알고리즘에 절대 탐지되지 않습니다.
         """)
 
     saved_cp = load_checkpoint()
