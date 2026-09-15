@@ -9,12 +9,11 @@ import uuid
 
 st.set_page_config(page_title="DX-CheckMate 자동 출석", page_icon=":material/fact_check:", layout="wide")
 
-# 📌 1. 보안 설정 (st.secrets 활용하여 깃허브 코드 내 암호 노출 방지)
-# Streamlit Cloud의 Settings -> Secrets에 APP_PASSWORD = "edunlab" 설정 필요
-SECRET_PASSWORD = st.secrets.get("APP_PASSWORD", "edunlab")
-
+# 📌 1. 암호 인증 및 개발자 권한 세션 관리
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
+if "is_dev" not in st.session_state:
+    st.session_state.is_dev = False
 
 if not st.session_state.authenticated:
     st.title("🔒 DX-CheckMate 자동 출석 로그인")
@@ -25,13 +24,30 @@ if not st.session_state.authenticated:
         submit_btn = st.form_submit_button("로그인", type="primary")
         
         if submit_btn:
-            if password_input == SECRET_PASSWORD:
+            if password_input == "edunlab":
                 st.session_state.authenticated = True
-                st.success("인증에 성공했습니다!")
+                st.session_state.is_dev = False
+                st.rerun()
+            elif password_input == "coldblend":
+                st.session_state.authenticated = True
+                st.session_state.is_dev = True
                 st.rerun()
             else:
-                st.error("암호가 올바르지 않습니다. 다시 확인해 주세요.")
-    st.stop()  # 미인증 시 아래 코드 실행 중단
+                st.error("암호가 올바르지 않습니다.")
+    st.stop()
+
+# 📌 2. 일반 사용자의 경우 오른쪽 상단 메뉴(Share, Fork, GitHub 등) 숨기기 Custom CSS
+if not st.session_state.is_dev:
+    hide_streamlit_style = """
+        <style>
+        #MainMenu {visibility: hidden;}
+        header {visibility: hidden;}
+        footer {visibility: hidden;}
+        </style>
+    """
+    st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+else:
+    st.toast("👨‍💻 Developer Mode (상단 메뉴 활성화)", icon="🛠️")
 
 # ---------------- 인증 완료 후 메인 시스템 ----------------
 
@@ -128,8 +144,10 @@ def generate_decay_delays(num_people, mode):
     timestamps = []
     for _ in range(count_early):
         timestamps.append(random.uniform(0, t_early))
+        
     for _ in range(count_peak):
         timestamps.append(random.uniform(t_early, t_peak))
+
     for _ in range(count_tail):
         timestamps.append(random.uniform(t_peak, total_duration))
 
@@ -231,10 +249,10 @@ try:
         * 정적 스프레드시트의 인덱스 순서대로 데이터를 순차 전송할 경우 자동화 스크립트로 즉시 식별됩니다. 이를 방지하기 위해 제출 대상자의 순서를 제비뽑기 알고리즘으로 비선형 무작위 셔플링하여 수신 서버에 전송합니다.
 
         **2. 인간 인지 반응 지연 및 동시 피크 모사 (Cognitive Delay & S-Curve Spike)**
-        * QR 코드 투사 즉시 접속하는 기계적 0초 제출을 배제하고, **초기 탐색 지연(Phase 1: 5%) ➔ 주 폭주 피크(Phase 2: 65%) ➔ 잔여 분산(Phase 3: 30%)**의 3단계 오프라인 S곡선 트래픽 곡선을 생성합니다.
+        * QR 코드 투사 즉시 접속하는 기계적 0초 제출을 배제하고, **초기 탐색 지연(Phase 1: 5%) -> 주 폭주 피크(Phase 2: 65%) -> 잔여 분산(Phase 3: 30%)**의 3단계 오프라인 S곡선 트래픽 곡선을 생성합니다.
 
         **3. 전체 사이클 및 분기점 난수화 (Dynamic Total Duration & Threshold)**
-        * 모드별 **전체 소요 시간(Total Duration)**을 매 실행마다 무작위 산출하고, 구간별 시간 분기점($t_{early}, t_{peak}$) 및 비중을 난수로 재계산하여 정적 매크로 패턴 분석을 완전히 무력화합니다.
+        * 모드별 **전체 소요 시간(Total Duration)**을 매 실행마다 무작위 산출하고, 구간별 시간 분기점 및 비중을 난수로 재계산하여 정적 매크로 패턴 분석을 완전히 무력화합니다.
         """)
 
     saved_cp = load_checkpoint()
