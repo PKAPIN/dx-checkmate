@@ -9,6 +9,29 @@ import uuid
 
 st.set_page_config(page_title="DX-CheckMate 자동 출석", page_icon=":material/fact_check:", layout="wide")
 
+# 📌 1. 암호 인증 관리 (Session State)
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+    st.title("🔒 DX-CheckMate 자동 출석 로그인")
+    st.caption("시스템 이용을 위해 보안 암호를 입력해 주세요.")
+    
+    with st.form("login_form"):
+        password_input = st.text_input("접속 암호", type="password", placeholder="암호를 입력하세요")
+        submit_btn = st.form_submit_button("로그인", type="primary")
+        
+        if submit_btn:
+            if password_input == "edunlab":
+                st.session_state.authenticated = True
+                st.success("인증에 성공했습니다!")
+                st.rerun()
+            else:
+                st.error("암호가 올바르지 않습니다. 다시 확인해 주세요.")
+    st.stop()  # 암호 미인증 시 아래 코드 실행 중단
+
+# ---------------- 인증 완료 후 메인 시스템 ----------------
+
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())[:8]
 if "is_running" not in st.session_state:
@@ -210,7 +233,6 @@ try:
         disabled=st.session_state.is_running
     )
 
-    # 📌 4분/6분 현장 표준 기준 기술 명세 복구 반영
     with st.expander("ℹ️ 자동 출석 시스템 세부 작동 원리 (Security & Pattern Obfuscation)"):
         st.markdown("""
         본 시스템은 백엔드 서버의 매크로 및 어뷰징 탐지 알고리즘(Anti-Bot Detection)을 무력화하기 위해, **현장 QR 오프라인 출석 시 발생하는 생체 인지 반응 및 동시 다발적 접속 행동(S-Curve Burst Traffic)**을 수학적 난수 알고리즘으로 재현합니다.
