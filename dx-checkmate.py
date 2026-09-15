@@ -9,7 +9,10 @@ import uuid
 
 st.set_page_config(page_title="DX-CheckMate 자동 출석", page_icon=":material/fact_check:", layout="wide")
 
-# 📌 1. 암호 인증 관리 (Session State)
+# 📌 1. 보안 설정 (st.secrets 활용하여 깃허브 코드 내 암호 노출 방지)
+# Streamlit Cloud의 Settings -> Secrets에 APP_PASSWORD = "edunlab" 설정 필요
+SECRET_PASSWORD = st.secrets.get("APP_PASSWORD", "edunlab")
+
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
@@ -22,13 +25,13 @@ if not st.session_state.authenticated:
         submit_btn = st.form_submit_button("로그인", type="primary")
         
         if submit_btn:
-            if password_input == "edunlab":
+            if password_input == SECRET_PASSWORD:
                 st.session_state.authenticated = True
                 st.success("인증에 성공했습니다!")
                 st.rerun()
             else:
                 st.error("암호가 올바르지 않습니다. 다시 확인해 주세요.")
-    st.stop()  # 암호 미인증 시 아래 코드 실행 중단
+    st.stop()  # 미인증 시 아래 코드 실행 중단
 
 # ---------------- 인증 완료 후 메인 시스템 ----------------
 
@@ -98,24 +101,20 @@ def generate_decay_delays(num_people, mode):
     if num_people == 0:
         return []
 
-    # 고속 즉시 모드: 100% 동시 즉시 전송
     if "1초 이내" in mode or "고속 즉시" in mode:
         return [0] * num_people
 
-    # 1. 실행할 때마다 총 소요시간 완전 난수화
     if "1분 이내" in mode:
         total_duration = random.uniform(30, 50)
     elif "2분 초밀집" in mode:
         total_duration = random.uniform(90, 120)
     elif "4분 현장 표준" in mode:
-        total_duration = random.uniform(180, 240)  # 3분~4분(180~240초) 사이 난수화
+        total_duration = random.uniform(180, 240)
     elif "6분 완만 분산" in mode:
-        total_duration = random.uniform(300, 360)  # 5분~6분(300~360초) 사이 난수화
+        total_duration = random.uniform(300, 360)
     else:
         return [0] * num_people
 
-    # 2. S-Curve 3단계 인원 비중 무작위 산출
-    # Phase 1: 점화(얼리액세서)약 5%, Phase 2: 주 폭주 60~70%, Phase 3: 잔여
     early_ratio = random.uniform(0.04, 0.08)
     peak_ratio = random.uniform(0.60, 0.70)
     
@@ -123,26 +122,19 @@ def generate_decay_delays(num_people, mode):
     count_peak = int(num_people * peak_ratio)
     count_tail = num_people - count_early - count_peak
 
-    # 3. 인간 인지 지연(Cognitive Delay) 반영 시간 구간 설정
-    t_early = total_duration * random.uniform(0.05, 0.10)  # 초기 반응 시간 지연
-    t_peak = total_duration * random.uniform(0.25, 0.35)   # 주 폭주 마감 시간
+    t_early = total_duration * random.uniform(0.05, 0.10)
+    t_peak = total_duration * random.uniform(0.25, 0.35)
 
     timestamps = []
-    # Phase 1: 인지/접속 지연 단계 (1~2명 극소수 진입)
     for _ in range(count_early):
         timestamps.append(random.uniform(0, t_early))
-        
-    # Phase 2: 주 폭주 단계 (QR 인식 후 대규모 유입)
     for _ in range(count_peak):
         timestamps.append(random.uniform(t_early, t_peak))
-
-    # Phase 3: 잔여 접수 단계 (지각 접속 및 완만 분산)
     for _ in range(count_tail):
         timestamps.append(random.uniform(t_peak, total_duration))
 
     timestamps.sort()
 
-    # 인원별 제출 지연 간격(Delay) 산출
     delays = []
     prev_t = 0
     for t in timestamps:
@@ -186,7 +178,6 @@ try:
     if len(df_raw) > 1 and pd.notna(df_raw.iloc[1, 1]):
         default_school = str(df_raw.iloc[1, 1]).strip()
 
-    # 구글 시트 4행에서 '진짜 출석 URL'만 추출 (docs.google.com 구글 시트 링크 제외)
     form_url = ""
     if len(df_raw) > 3:
         for cell in df_raw.iloc[3].dropna():
@@ -202,7 +193,6 @@ try:
     meal_header_name = meal_col[0] if meal_col else '점심식사'
     is_lunch_mode = '점심' in meal_header_name
 
-    # URL 존재 여부에 따른 메시지 출력
     if form_url:
         st.success(f"[{selected_tab_name}] 실시간 출석 URL 인식 완료: {form_url}", icon=":material/link:")
     else:
