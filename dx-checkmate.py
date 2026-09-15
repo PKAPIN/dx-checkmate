@@ -9,7 +9,7 @@ import uuid
 
 st.set_page_config(page_title="DX-CheckMate 자동 출석", page_icon=":material/fact_check:", layout="wide")
 
-# 📌 1. GitHub 및 상단 툴바 전면 제거 (소스코드 유출 방지)
+# 📌 GitHub 링크 및 상단 툴바 전면 숨김 (소스코드 유출 방지)
 st.markdown("""
     <style>
     header[data-testid="stHeader"] { display: none !important; }
@@ -18,11 +18,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 📌 2. 암호 인증 관리
+# 📌 단일 암호 인증 관리
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
-if "is_dev" not in st.session_state:
-    st.session_state.is_dev = False
 
 if not st.session_state.authenticated:
     st.title("🔒 DX-CheckMate 자동 출석 로그인")
@@ -35,20 +33,12 @@ if not st.session_state.authenticated:
         if submit_btn:
             if password_input == "edunlab":
                 st.session_state.authenticated = True
-                st.session_state.is_dev = False
-                st.rerun()
-            elif password_input == "coldblend":
-                st.session_state.authenticated = True
-                st.session_state.is_dev = True
                 st.rerun()
             else:
                 st.error("암호가 올바르지 않습니다.")
     st.stop()
 
 # ---------------- 인증 완료 후 메인 시스템 ----------------
-
-if st.session_state.is_dev:
-    st.toast("👨‍💻 Developer Mode 접속 완료", icon="🛠️")
 
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())[:8]
