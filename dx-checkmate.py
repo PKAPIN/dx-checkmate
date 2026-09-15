@@ -9,23 +9,16 @@ import uuid
 
 st.set_page_config(page_title="DX-CheckMate 자동 출석", page_icon=":material/fact_check:", layout="wide")
 
-# 📌 1. 상단 툴바 제어 CSS (점 3개 메뉴 '⋮'만 남기고 나머지 Share, Star, Fork, GitHub 버튼은 숨김)
+# 📌 1. GitHub 및 상단 툴바 전면 제거 (소스코드 유출 방지)
 st.markdown("""
     <style>
-    /* Share, Star, Fork, GitHub 등 상단 개별 버튼만 핀포인트 숨김 */
-    header div[data-testid="stActionButton"] { display: none !important; }
-    header a[aria-label="GitHub"] { display: none !important; }
-    header button[aria-label="Share"] { display: none !important; }
-    header button[aria-label="Star"] { display: none !important; }
-    header button[aria-label="Fork"] { display: none !important; }
-    
-    /* 점 3개(MainMenu) 아이콘은 노출 유지 */
-    #MainMenu { visibility: visible !important; display: block !important; }
+    header[data-testid="stHeader"] { display: none !important; }
+    #MainMenu { visibility: hidden !important; }
     footer { visibility: hidden !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# 📌 2. 암호 인증 페이지 관리
+# 📌 2. 암호 인증 관리
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "is_dev" not in st.session_state:
@@ -50,12 +43,12 @@ if not st.session_state.authenticated:
                 st.rerun()
             else:
                 st.error("암호가 올바르지 않습니다.")
-    st.stop()  # 암호 미인증 시 메인 기능 접근 중단
+    st.stop()
 
 # ---------------- 인증 완료 후 메인 시스템 ----------------
 
 if st.session_state.is_dev:
-    st.toast("👨‍💻 Developer Mode (coldblend 접속 완료)", icon="🛠️")
+    st.toast("👨‍💻 Developer Mode 접속 완료", icon="🛠️")
 
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())[:8]
