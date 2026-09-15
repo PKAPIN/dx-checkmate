@@ -15,36 +15,44 @@ if "authenticated" not in st.session_state:
 if "is_dev" not in st.session_state:
     st.session_state.is_dev = False
 
-# 📌 2. 사이드바 암호 입력 영역 (개발자 모드 전환용)
+# 📌 2. 상단 오른쪽 툴바 제어 CSS (점 3개 '⋮' 빼고 Share, Star, Fork, GitHub 등 전면 숨김)
+if not st.session_state.is_dev:
+    st.markdown("""
+        <style>
+        /* 오른쪽 상단 버튼들 중 점3개(MainMenu) 제외한 나머지 아이콘/버튼 제거 */
+        header div[data-testid="stActionButton"] { display: none !important; }
+        header a[aria-label="GitHub"] { display: none !important; }
+        header button[aria-label="Share"] { display: none !important; }
+        header button[aria-label="Star"] { display: none !important; }
+        header button[aria-label="Fork"] { display: none !important; }
+        
+        /* 점 3개 메뉴는 계속 보이도록 지정 */
+        #MainMenu { visibility: visible !important; display: block !important; }
+        footer { visibility: hidden !important; }
+        </style>
+    """, unsafe_allow_html=True)
+
+# 📌 3. 사이드바 개발자 암호 입력 영역 (점 3개 외 암호 입력 채널)
 with st.sidebar:
     st.title("⚙️ 시스템 설정")
-    if not st.session_state.authenticated:
+    if not st.session_state.is_dev:
         st.subheader("🔒 개발자 인증")
-        dev_pass = st.text_input("보안/개발자 암호", type="password", placeholder="암호 입력 후 엔터")
-        if dev_pass == "edunlab":
-            st.session_state.authenticated = True
-            st.session_state.is_dev = False
-            st.success("일반 사용자 인증 완료")
-            st.rerun()
-        elif dev_pass == "coldblend":
-            st.session_state.authenticated = True
+        dev_pass = st.text_input("개발자 코드", type="password", placeholder="coldblend 입력")
+        if dev_pass == "coldblend":
             st.session_state.is_dev = True
-            st.success("개발자(Dev) 모드 인증 완료")
+            st.success("개발자 모드 활성화됨 (상단 UI 해제)")
             st.rerun()
         elif dev_pass != "":
             st.error("암호가 올바르지 않습니다.")
     else:
-        if st.session_state.is_dev:
-            st.success("👨‍💻 개발자 권한 활성화됨")
-            if st.button("로그아웃 / 암호 재설정"):
-                st.session_state.authenticated = False
-                st.session_state.is_dev = False
-                st.rerun()
-        else:
-            st.info("👤 일반 사용자 모드")
+        st.success("👨‍💻 개발자 권한 활성화됨")
+        st.caption("Share, Fork, GitHub 등 상단 UI가 모두 노출 중입니다.")
+        if st.button("개발자 모드 종료"):
+            st.session_state.is_dev = False
+            st.rerun()
 
 if st.session_state.is_dev:
-    st.toast("👨‍💻 Developer Mode 활성화 상태", icon="🛠️")
+    st.toast("👨‍💻 Developer Mode 활성화 (상단 전체 UI 표출)", icon="🛠️")
 
 # ---------------- 메인 자동 출석 시스템 ----------------
 
