@@ -15,6 +15,20 @@ if "authenticated" not in st.session_state:
 if "is_dev" not in st.session_state:
     st.session_state.is_dev = False
 
+# 📌 2. 기본적으로 상단 툴바/메뉴(Share, GitHub, Fork 등) 무조건 숨기기 (개발자 접속 시에만 해제)
+if not st.session_state.is_dev:
+    st.markdown("""
+        <style>
+        #MainMenu {visibility: hidden !important;}
+        header {visibility: hidden !important;}
+        footer {visibility: hidden !important;}
+        div[data-testid="stHeader"] {display: none !important;}
+        </style>
+    """, unsafe_allow_html=True)
+else:
+    st.toast("👨‍💻 Developer Mode (상단 메뉴 활성화)", icon="🛠️")
+
+# 📌 3. 로그인 인증 처리
 if not st.session_state.authenticated:
     st.title("🔒 DX-CheckMate 자동 출석 로그인")
     st.caption("시스템 이용을 위해 보안 암호를 입력해 주세요.")
@@ -35,19 +49,6 @@ if not st.session_state.authenticated:
             else:
                 st.error("암호가 올바르지 않습니다.")
     st.stop()
-
-# 📌 2. 일반 사용자의 경우 오른쪽 상단 메뉴(Share, Fork, GitHub 등) 숨기기 Custom CSS
-if not st.session_state.is_dev:
-    hide_streamlit_style = """
-        <style>
-        #MainMenu {visibility: hidden;}
-        header {visibility: hidden;}
-        footer {visibility: hidden;}
-        </style>
-    """
-    st.markdown(hide_streamlit_style, unsafe_allow_html=True)
-else:
-    st.toast("👨‍💻 Developer Mode (상단 메뉴 활성화)", icon="🛠️")
 
 # ---------------- 인증 완료 후 메인 시스템 ----------------
 
