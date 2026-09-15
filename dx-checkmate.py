@@ -9,48 +9,44 @@ import uuid
 
 st.set_page_config(page_title="DX-CheckMate 자동 출석", page_icon=":material/fact_check:", layout="wide")
 
-# 📌 1. 암호 인증 및 개발자 권한 세션 관리
+# 📌 1. 개발자 세션 상태 관리
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "is_dev" not in st.session_state:
     st.session_state.is_dev = False
 
-# 📌 2. 기본적으로 상단 툴바/메뉴(Share, GitHub, Fork 등) 무조건 숨기기 (개발자 접속 시에만 해제)
-if not st.session_state.is_dev:
-    st.markdown("""
-        <style>
-        #MainMenu {visibility: hidden !important;}
-        header {visibility: hidden !important;}
-        footer {visibility: hidden !important;}
-        div[data-testid="stHeader"] {display: none !important;}
-        </style>
-    """, unsafe_allow_html=True)
-else:
-    st.toast("👨‍💻 Developer Mode (상단 메뉴 활성화)", icon="🛠️")
-
-# 📌 3. 로그인 인증 처리
-if not st.session_state.authenticated:
-    st.title("🔒 DX-CheckMate 자동 출석 로그인")
-    st.caption("시스템 이용을 위해 보안 암호를 입력해 주세요.")
-    
-    with st.form("login_form"):
-        password_input = st.text_input("접속 암호", type="password", placeholder="암호를 입력하세요")
-        submit_btn = st.form_submit_button("로그인", type="primary")
-        
-        if submit_btn:
-            if password_input == "edunlab":
-                st.session_state.authenticated = True
+# 📌 2. 사이드바 암호 입력 영역 (개발자 모드 전환용)
+with st.sidebar:
+    st.title("⚙️ 시스템 설정")
+    if not st.session_state.authenticated:
+        st.subheader("🔒 개발자 인증")
+        dev_pass = st.text_input("보안/개발자 암호", type="password", placeholder="암호 입력 후 엔터")
+        if dev_pass == "edunlab":
+            st.session_state.authenticated = True
+            st.session_state.is_dev = False
+            st.success("일반 사용자 인증 완료")
+            st.rerun()
+        elif dev_pass == "coldblend":
+            st.session_state.authenticated = True
+            st.session_state.is_dev = True
+            st.success("개발자(Dev) 모드 인증 완료")
+            st.rerun()
+        elif dev_pass != "":
+            st.error("암호가 올바르지 않습니다.")
+    else:
+        if st.session_state.is_dev:
+            st.success("👨‍💻 개발자 권한 활성화됨")
+            if st.button("로그아웃 / 암호 재설정"):
+                st.session_state.authenticated = False
                 st.session_state.is_dev = False
                 st.rerun()
-            elif password_input == "coldblend":
-                st.session_state.authenticated = True
-                st.session_state.is_dev = True
-                st.rerun()
-            else:
-                st.error("암호가 올바르지 않습니다.")
-    st.stop()
+        else:
+            st.info("👤 일반 사용자 모드")
 
-# ---------------- 인증 완료 후 메인 시스템 ----------------
+if st.session_state.is_dev:
+    st.toast("👨‍💻 Developer Mode 활성화 상태", icon="🛠️")
+
+# ---------------- 메인 자동 출석 시스템 ----------------
 
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())[:8]
