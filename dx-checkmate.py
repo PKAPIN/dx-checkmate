@@ -9,23 +9,48 @@ import uuid
 
 st.set_page_config(page_title="DX-CheckMate 자동 출석", page_icon=":material/fact_check:", layout="wide")
 
-# 📌 1. 상단 툴바 및 GitHub 링크 전면 영구 숨김 (외부 유출 방지)
+# 📌 1. 상단 툴바 전면 숨김 + Dev Code 입력창 크기 컴팩트 축소 CSS
 st.markdown("""
     <style>
+    /* 상단 헤더 툴바 및 GitHub 링크 영구 숨김 (소스 유출 완전 차단) */
     header[data-testid="stHeader"] { display: none !important; }
     #MainMenu { visibility: hidden !important; display: none !important; }
     footer { visibility: hidden !important; display: none !important; }
     div[data-testid="stToolbar"] { display: none !important; }
+
+    /* 좌측 상단 Dev Code Expander 컴팩트 스타일 지정 */
+    div[data-testid="stExpander"] {
+        max-width: 170px !important;
+        margin-bottom: 0px !important;
+        border: 1px solid rgba(250, 250, 250, 0.2) !important;
+        border-radius: 8px !important;
+    }
+    div[data-testid="stExpanderSummary"] {
+        padding: 4px 8px !important;
+        font-size: 13px !important;
+    }
+    div[data-testid="stExpanderDetails"] {
+        padding: 6px 8px !important;
+    }
+    div[data-testid="stExpander"] input {
+        font-size: 12px !important;
+        padding: 4px 6px !important;
+        height: 30px !important;
+    }
+    div[data-testid="stExpander"] label {
+        font-size: 11px !important;
+        margin-bottom: 2px !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# 📌 2. 인증 관리
+# 📌 2. 인증 관리 상태
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "is_dev" not in st.session_state:
     st.session_state.is_dev = False
 
-# 📌 3. 초기 로그인 화면
+# 📌 3. 보안 로그인 화면
 if not st.session_state.authenticated:
     st.title("🔒 DX-CheckMate 자동 출석 로그인")
     st.caption("시스템 이용을 위해 보안 암호를 입력해 주세요.")
@@ -61,7 +86,7 @@ if "completed_results" not in st.session_state:
 SHEET_ID = "1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU"
 SHEET_WEB_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit?gid=1678272994#gid=1678272994"
 ADMIN_WEB_URL = "https://cms.dxcheck.kr/"
-GITHUB_DEV_URL = "https://github.com/"  # 👈 실제 GitHub 리포지토리 URL을 적어주세요
+GITHUB_DEV_URL = "https://github.com/"  # 👈 실제 GitHub 리포지토리 URL 지정
 API_URL = "https://api.dxcheck.kr/api/v1/attendance"
 
 TAB_CONFIG = {
@@ -72,17 +97,17 @@ TAB_CONFIG = {
     "출석체크_5": "250944092"
 }
 
-# 📌 4. 좌측 상단 Dev Code 입력 영역 및 타이틀 레이아웃
+# 📌 4. 좌측 상단 초소형 Dev Code 입력창
 top_left_col, top_right_col = st.columns([1, 4])
 
 with top_left_col:
     with st.expander("🔑 Dev Code", expanded=False):
-        dev_code_input = st.text_input("개발자 암호", type="password", key="top_dev_code", placeholder="코드 입력 후 엔터")
+        dev_code_input = st.text_input("개발자 암호", type="password", key="top_dev_code", placeholder="코드 입력")
         if dev_code_input == "coldblend":
             st.session_state.is_dev = True
-            st.success("개발자 권한 인증됨")
+            st.success("인증 완료")
         elif dev_code_input != "":
-            st.error("인증 실패")
+            st.error("오류")
 
 col_title, col_guide = st.columns([1.5, 1])
 
