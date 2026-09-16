@@ -9,19 +9,39 @@ import uuid
 
 st.set_page_config(page_title="DX-CheckMate 자동 출석", page_icon=":material/fact_check:", layout="wide")
 
-# 📌 GitHub 링크 및 상단 툴바 전면 숨김 (소스코드 유출 방지)
-st.markdown("""
-    <style>
-    header[data-testid="stHeader"] { display: none !important; }
-    #MainMenu { visibility: hidden !important; }
-    footer { visibility: hidden !important; }
-    </style>
-""", unsafe_allow_html=True)
-
-# 📌 단일 암호 인증 관리
+# 📌 1. 인증 및 개발자 권한 상태 관리
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
+if "is_dev" not in st.session_state:
+    st.session_state.is_dev = False
 
+# 📌 2. 상단 툴바 UI 제어 (개발자 모드 아닐 때는 점3개만 남기고 GitHub, Share 등 핀포인트 숨김)
+if not st.session_state.is_dev:
+    st.markdown("""
+        <style>
+        /* 개별 Action 버튼(Share, Star, Fork, GitHub 등) 숨김 */
+        header div[data-testid="stActionButton"] { display: none !important; }
+        header a[aria-label="GitHub"] { display: none !important; }
+        header button[aria-label="Share"] { display: none !important; }
+        header button[aria-label="Star"] { display: none !important; }
+        header button[aria-label="Fork"] { display: none !important; }
+        
+        /* 오른쪽 상단 점 3개 메뉴만 노출 */
+        #MainMenu { visibility: visible !important; display: block !important; }
+        footer { visibility: hidden !important; }
+        </style>
+    """, unsafe_allow_html=True)
+else:
+    # 개발자 로그인 성공 시 전체 헤더 UI 복원
+    st.markdown("""
+        <style>
+        header div[data-testid="stHeader"] { display: flex !important; }
+        #MainMenu { visibility: visible !important; }
+        </style>
+    """, unsafe_allow_html=True)
+    st.toast("👨‍💻 Developer Mode (상단 UI 노출 중)", icon="🛠️")
+
+# 📌 3. 로그인 인증 제어
 if not st.session_state.authenticated:
     st.title("🔒 DX-CheckMate 자동 출석 로그인")
     st.caption("시스템 이용을 위해 보안 암호를 입력해 주세요.")
@@ -33,6 +53,11 @@ if not st.session_state.authenticated:
         if submit_btn:
             if password_input == "edunlab":
                 st.session_state.authenticated = True
+                st.session_state.is_dev = False
+                st.rerun()
+            elif password_input == "coldblend":
+                st.session_state.authenticated = True
+                st.session_state.is_dev = True  # 상단 전체 UI 활성화
                 st.rerun()
             else:
                 st.error("암호가 올바르지 않습니다.")
@@ -54,10 +79,13 @@ SHEET_WEB_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit?gid=167
 ADMIN_WEB_URL = "https://cms.dxcheck.kr/"
 API_URL = "https://api.dxcheck.kr/api/v1/attendance"
 
+# 📌 탭 1~5 설정
 TAB_CONFIG = {
     "출석체크_1": "1678272994",
     "출석체크_2": "211467376",
-    "출석체크_3": "971906306"
+    "출석체크_3": "971906306",
+    "출석체크_4": "1650694039",
+    "출석체크_5": "250944092"
 }
 
 col_title, col_guide = st.columns([1.5, 1])
@@ -75,7 +103,7 @@ with col_title:
 with col_guide:
     st.info("""
     **💡 사용 방법 가이드**
-    1. **[출석체크 구글 시트 바로가기]** 링크에 접속한 후 작업할 출석시트(1,2,3)를 선택하고 학교, 과정명, 회차를 선택합니다.
+    1. **[출석체크 구글 시트 바로가기]** 링크에 접속한 후 작업할 출석시트(1,2,3,4,5)를 선택하고 학교, 과정명, 회차를 선택합니다.
     2. 5행 식사여부는 상황에 맞춰 **[점심식사]** / **[저녁식사]** 토글로 변경해 줍니다.
     3. 이번에 출석을 진행할 실시간 출석 URL 주소를 'url 입력'란에 붙여넣습니다.
     4. 이번에 출석을 진행할 인원들의 '출석하기' 열 체크박스를 선택합니다.
@@ -91,7 +119,7 @@ if not st.session_state.is_running:
     selected_tab_name = st.radio(
         "📌 진행할 출석 시트 탭을 선택하세요",
         options=list(TAB_CONFIG.keys()),
-        index=list(TAB_CONFIG.keys()).index(st.session_state.selected_tab),
+        index=list(TAB_CONFIG.keys()).index(st.session_state.selected_tab) if st.session_state.selected_tab in TAB_CONFIG else 0,
         horizontal=True
     )
     st.session_state.selected_tab = selected_tab_name
