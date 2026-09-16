@@ -9,7 +9,7 @@ import uuid
 
 st.set_page_config(page_title="DX-CheckMate 자동 출석", page_icon=":material/fact_check:", layout="wide")
 
-# 📌 1. 상단 툴바 및 GitHub 링크 전면 영구 숨김 (소인/외부인 소스코드 유출 원천 차단)
+# 📌 1. 상단 툴바 및 GitHub 링크 전면 영구 숨김 (외부 유출 방지)
 st.markdown("""
     <style>
     header[data-testid="stHeader"] { display: none !important; }
@@ -19,13 +19,13 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 📌 2. 인증 및 개발자 권한 상태 관리
+# 📌 2. 인증 관리
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "is_dev" not in st.session_state:
     st.session_state.is_dev = False
 
-# 📌 3. 보안 로그인 페이지
+# 📌 3. 초기 로그인 화면
 if not st.session_state.authenticated:
     st.title("🔒 DX-CheckMate 자동 출석 로그인")
     st.caption("시스템 이용을 위해 보안 암호를 입력해 주세요.")
@@ -41,7 +41,7 @@ if not st.session_state.authenticated:
                 st.rerun()
             elif password_input == "coldblend":
                 st.session_state.authenticated = True
-                st.session_state.is_dev = True  # 개발자 권한 부여 (화면 내 GitHub 버튼 생성)
+                st.session_state.is_dev = True
                 st.rerun()
             else:
                 st.error("암호가 올바르지 않습니다.")
@@ -61,10 +61,9 @@ if "completed_results" not in st.session_state:
 SHEET_ID = "1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU"
 SHEET_WEB_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit?gid=1678272994#gid=1678272994"
 ADMIN_WEB_URL = "https://cms.dxcheck.kr/"
-GITHUB_DEV_URL = "https://github.com/"  # 👈 실제 사용하는 개발자 GitHub 리포지토리 URL로 변경하여 사용하세요
+GITHUB_DEV_URL = "https://github.com/"  # 👈 실제 GitHub 리포지토리 URL을 적어주세요
 API_URL = "https://api.dxcheck.kr/api/v1/attendance"
 
-# 📌 탭 1~5 설정
 TAB_CONFIG = {
     "출석체크_1": "1678272994",
     "출석체크_2": "211467376",
@@ -73,22 +72,33 @@ TAB_CONFIG = {
     "출석체크_5": "250944092"
 }
 
+# 📌 4. 좌측 상단 Dev Code 입력 영역 및 타이틀 레이아웃
+top_left_col, top_right_col = st.columns([1, 4])
+
+with top_left_col:
+    with st.expander("🔑 Dev Code", expanded=False):
+        dev_code_input = st.text_input("개발자 암호", type="password", key="top_dev_code", placeholder="코드 입력 후 엔터")
+        if dev_code_input == "coldblend":
+            st.session_state.is_dev = True
+            st.success("개발자 권한 인증됨")
+        elif dev_code_input != "":
+            st.error("인증 실패")
+
 col_title, col_guide = st.columns([1.5, 1])
 
 with col_title:
     st.title(":material/how_to_reg: DX-CheckMate 자동 출석")
     st.caption("구글 스프레드시트 데이터를 읽어와 백엔드 API로 현장 패턴에 맞게 자동 출석을 제출합니다.")
 
-    # 개발자 모드(coldblend) 접속 시 화면 내에 GitHub 전용 링크 표출
+    # 개발자 인증 시 GitHub 버튼 추가 노출
     if st.session_state.is_dev:
-        st.success("👨‍💻 개발자 모드로 접속 중입니다.", icon=":material/developer_mode:")
         btn_col1, btn_col2, btn_col3 = st.columns(3)
         with btn_col1:
             st.link_button("출석체크 구글 시트 바로가기", SHEET_WEB_URL, icon=":material/table_view:", use_container_width=True)
         with btn_col2:
             st.link_button("CMS 프로그램 바로가기", ADMIN_WEB_URL, icon=":material/admin_panel_settings:", use_container_width=True)
         with btn_col3:
-            st.link_button("📂 GitHub 소스코드 바로가기", GITHUB_DEV_URL, icon=":material/code:", use_container_width=True)
+            st.link_button("📂 GitHub 바로가기", GITHUB_DEV_URL, icon=":material/code:", use_container_width=True)
     else:
         btn_col1, btn_col2 = st.columns(2)
         with btn_col1:
