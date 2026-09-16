@@ -9,39 +9,23 @@ import uuid
 
 st.set_page_config(page_title="DX-CheckMate 자동 출석", page_icon=":material/fact_check:", layout="wide")
 
-# 📌 1. 인증 및 개발자 권한 상태 관리
+# 📌 1. 상단 툴바 및 GitHub 링크 전면 영구 숨김 (소인/외부인 소스코드 유출 원천 차단)
+st.markdown("""
+    <style>
+    header[data-testid="stHeader"] { display: none !important; }
+    #MainMenu { visibility: hidden !important; display: none !important; }
+    footer { visibility: hidden !important; display: none !important; }
+    div[data-testid="stToolbar"] { display: none !important; }
+    </style>
+""", unsafe_allow_html=True)
+
+# 📌 2. 인증 및 개발자 권한 상태 관리
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "is_dev" not in st.session_state:
     st.session_state.is_dev = False
 
-# 📌 2. 상단 툴바 UI 제어 (개발자 모드 아닐 때는 점3개만 남기고 GitHub, Share 등 핀포인트 숨김)
-if not st.session_state.is_dev:
-    st.markdown("""
-        <style>
-        /* 개별 Action 버튼(Share, Star, Fork, GitHub 등) 숨김 */
-        header div[data-testid="stActionButton"] { display: none !important; }
-        header a[aria-label="GitHub"] { display: none !important; }
-        header button[aria-label="Share"] { display: none !important; }
-        header button[aria-label="Star"] { display: none !important; }
-        header button[aria-label="Fork"] { display: none !important; }
-        
-        /* 오른쪽 상단 점 3개 메뉴만 노출 */
-        #MainMenu { visibility: visible !important; display: block !important; }
-        footer { visibility: hidden !important; }
-        </style>
-    """, unsafe_allow_html=True)
-else:
-    # 개발자 로그인 성공 시 전체 헤더 UI 복원
-    st.markdown("""
-        <style>
-        header div[data-testid="stHeader"] { display: flex !important; }
-        #MainMenu { visibility: visible !important; }
-        </style>
-    """, unsafe_allow_html=True)
-    st.toast("👨‍💻 Developer Mode (상단 UI 노출 중)", icon="🛠️")
-
-# 📌 3. 로그인 인증 제어
+# 📌 3. 보안 로그인 페이지
 if not st.session_state.authenticated:
     st.title("🔒 DX-CheckMate 자동 출석 로그인")
     st.caption("시스템 이용을 위해 보안 암호를 입력해 주세요.")
@@ -57,7 +41,7 @@ if not st.session_state.authenticated:
                 st.rerun()
             elif password_input == "coldblend":
                 st.session_state.authenticated = True
-                st.session_state.is_dev = True  # 상단 전체 UI 활성화
+                st.session_state.is_dev = True  # 개발자 권한 부여 (화면 내 GitHub 버튼 생성)
                 st.rerun()
             else:
                 st.error("암호가 올바르지 않습니다.")
@@ -77,6 +61,7 @@ if "completed_results" not in st.session_state:
 SHEET_ID = "1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU"
 SHEET_WEB_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit?gid=1678272994#gid=1678272994"
 ADMIN_WEB_URL = "https://cms.dxcheck.kr/"
+GITHUB_DEV_URL = "https://github.com/"  # 👈 실제 사용하는 개발자 GitHub 리포지토리 URL로 변경하여 사용하세요
 API_URL = "https://api.dxcheck.kr/api/v1/attendance"
 
 # 📌 탭 1~5 설정
@@ -94,11 +79,22 @@ with col_title:
     st.title(":material/how_to_reg: DX-CheckMate 자동 출석")
     st.caption("구글 스프레드시트 데이터를 읽어와 백엔드 API로 현장 패턴에 맞게 자동 출석을 제출합니다.")
 
-    btn_col1, btn_col2 = st.columns(2)
-    with btn_col1:
-        st.link_button("출석체크 구글 시트 바로가기", SHEET_WEB_URL, icon=":material/table_view:", use_container_width=True)
-    with btn_col2:
-        st.link_button("CMS 프로그램 출결관리 바로가기", ADMIN_WEB_URL, icon=":material/admin_panel_settings:", use_container_width=True)
+    # 개발자 모드(coldblend) 접속 시 화면 내에 GitHub 전용 링크 표출
+    if st.session_state.is_dev:
+        st.success("👨‍💻 개발자 모드로 접속 중입니다.", icon=":material/developer_mode:")
+        btn_col1, btn_col2, btn_col3 = st.columns(3)
+        with btn_col1:
+            st.link_button("출석체크 구글 시트 바로가기", SHEET_WEB_URL, icon=":material/table_view:", use_container_width=True)
+        with btn_col2:
+            st.link_button("CMS 프로그램 바로가기", ADMIN_WEB_URL, icon=":material/admin_panel_settings:", use_container_width=True)
+        with btn_col3:
+            st.link_button("📂 GitHub 소스코드 바로가기", GITHUB_DEV_URL, icon=":material/code:", use_container_width=True)
+    else:
+        btn_col1, btn_col2 = st.columns(2)
+        with btn_col1:
+            st.link_button("출석체크 구글 시트 바로가기", SHEET_WEB_URL, icon=":material/table_view:", use_container_width=True)
+        with btn_col2:
+            st.link_button("CMS 프로그램 출결관리 바로가기", ADMIN_WEB_URL, icon=":material/admin_panel_settings:", use_container_width=True)
 
 with col_guide:
     st.info("""
